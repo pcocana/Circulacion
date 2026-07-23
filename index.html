@@ -792,7 +792,7 @@ body {
       <div class="card c-purple">
         <div class="card-icon">📄</div>
         <div class="card-value" id="cArticulos">0</div>
-        <div class="card-label">Artículos científicos</div>
+        <div class="card-label">Artículos, ponencias y web</div>
         <div class="card-sub" id="cArticulosSub">Excluidos del cálculo · disponibles en línea</div>
       </div>
     </div>
@@ -893,6 +893,7 @@ body {
 // ══════════════════════════════════════════════════════════
 let rawExt = null, rawCirc = null, rawCat = null;
 let allResults = [], filtered = [];
+let ultimoRefs = null, ultimoCirc = null; // se guardan para poder re-renderizar tras un ajuste manual
 let sortKey = 'prestamos', sortDir = -1;
 let filterTipo = '', filterEstado = '', currentPage = 0, programaActivo = '';
 const PAGE_SIZE = 50;
@@ -1078,14 +1079,28 @@ function keywords(text) {
 function parseRef(ref) {
   const s = String(ref || '').trim();
 
-  // Detectar artículos de revista → no aplica para circulación física
+  // Detectar artículos, ponencias/congresos y recursos web → no aplica para circulación física
   // Señal fuerte de capítulo dentro de un libro editado -> NO cuenta como artículo
   // (formato "En/In [Editor(es)] (Ed./Eds.), Título del libro (pp. X-Y)")
   const esCapituloLibro = /\b(en|in)\s+[^.(]{0,80}\((?:ed\.?s?|eds\.?|comp\.?|coord\.?|editor)/i.test(s);
-  // Patrón clásico de artículo de revista: "Nombre, volumen(número), páginas" (ej. "28(50), 1525")
-  const tieneVolNum = /,\s*\d{1,4}\s*\(\d{1,4}\)\s*,\s*\d/.test(s);
-  const tieneKeywordRevista = /\b(journal|revista|issn|transactions|proceedings|quarterly)\b/i.test(s);
-  const isArticle = !esCapituloLibro && (tieneVolNum || tieneKeywordRevista);
+
+  let isArticle = false, tipoNoAplica = null;
+  if (!esCapituloLibro) {
+    // Artículo de revista: "vol(núm), páginas" (ej. "28(50), 1525") o "vol, núm, pág-pág" sin paréntesis
+    // (ej. "48, 6, 739–754", formato usado por ZDM Mathematics Education y otras revistas)
+    const tieneVolNumParen = /,\s*\d{1,4}\s*\(\d{1,4}\)\s*,\s*\d/.test(s);
+    const tieneVolNumComa  = /,\s*\d{1,4}\s*,\s*\d{1,4}\s*,\s*\d{1,4}[\u2013\-]\d{1,4}/.test(s);
+    const tieneKeywordRevista = /\b(journal|revista|issn|transactions|proceedings|quarterly)\b/i.test(s);
+    if (tieneVolNumParen || tieneVolNumComa || tieneKeywordRevista) {
+      isArticle = true; tipoNoAplica = 'articulo';
+    } else if (/\b(presentado en|ponencia|colloque|coloquio|congreso|symposium|conference)\b/i.test(s)) {
+      // Ponencia o presentación en congreso — no es un libro físico catalogable
+      isArticle = true; tipoNoAplica = 'ponencia';
+    } else if (/\b(disponible en|recuperado de)\s*:?\s*http/i.test(s)) {
+      // Recurso web explícito (distinto de un DOI de libro impreso)
+      isArticle = true; tipoNoAplica = 'web';
+    }
+  }
 
   // Extraer apellido(s) del autor: primer token tipo "Apellido,"
   let lastName = '';
@@ -1094,21 +1109,38 @@ function parseRef(ref) {
 
   // Extraer año
   const yearM = s.match(/\((\d{4})\)/);
-  const year = yearM ? yearM[1] : '';
+  let year = yearM ? yearM[1] : '';
 
   // Extraer título: después de (año). hasta siguiente punto o fin
   // Soporta <i>...</i> y texto plano
   let titleRaw = '';
-  const italicM = s.match(/\(\d{4}\)[.)]\s*<i>([^<]+)<\/i>/i);
-  if (italicM) {
-    titleRaw = italicM[1];
+  if (yearM) {
+    const italicM = s.match(/\(\d{4}\)[.)]\s*<i>([^<]+)<\/i>/i);
+    if (italicM) {
+      titleRaw = italicM[1];
+    } else {
+      const plainM = s.match(/\(\d{4}\)[.)]\s*([^.]{8,})/);
+      if (plainM) titleRaw = plainM[1];
+    }
   } else {
-    const plainM = s.match(/\(\d{4}\)[.)]\s*([^.]{8,})/);
-    if (plainM) titleRaw = plainM[1];
+    // FALLBACK: año simple al final, sin paréntesis (bibliografía de matemática / estilo AMS,
+    // ej. "Stewart, J., Cálculo, Trascendentes Tempranas. 8va. Ed. Cengage Learning, 2018.")
+    const yearEndM = s.match(/,?\s*(\d{4})\s*\.?\s*$/);
+    if (yearEndM) {
+      year = yearEndM[1];
+      let resto = s.slice(0, yearEndM.index);
+      if (authorM) resto = resto.slice(authorM[0].length);
+      resto = resto.replace(/^[,;\s]+/, '');
+      // Cortar en el primer indicio de edición, editorial o lugar de publicación
+      const corteRe = /\b(?:\d+\S{0,4}\.?\s*(?:ed\.?\b|edici[oó]n)|edici[oó]n|editorial\b|ediciones\b|colecci[oó]n\b|[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s*:\s)/i;
+      const corteM = resto.match(corteRe);
+      titleRaw = corteM ? resto.slice(0, corteM.index) : resto;
+      titleRaw = titleRaw.replace(/[,;\s]+$/, '');
+    }
   }
 
   const kws = keywords(titleRaw || s);
-  return { lastName, year, keywords: kws, titleRaw, isArticle };
+  return { lastName, year, keywords: kws, titleRaw, isArticle, tipoNoAplica };
 }
 
 function matchScore(parsed, circItem) {
@@ -1501,8 +1533,12 @@ async function procesarDatos() {
 
       // prestamosPrograma = mismo que prestamos cuando hay programa definido
       const prestamosTotal = matchItem ? matchItem.prestamos : 0;
-      allResults.push({ ...ref, parsed, matchItem, catItem: catItem||null, prestamos, prestamosTotal, score, estado, _joinInventario });
+      allResults.push({ ...ref, parsed, matchItem, catItem: catItem||null, prestamos, prestamosTotal, score, estado, estadoOriginal: estado, _joinInventario });
     }
+
+    allResults.forEach((r, i) => { r._id = i; });
+    ultimoRefs = refs;
+    ultimoCirc = circ;
 
     addLog(`  ✓ Con uso: ${conUsoN} · Sin circulación: ${sinUsoN} · No en catálogo: ${noCatN} · Artículos: ${noaplica}`);
     addLog('▸ Construyendo dashboard...');
@@ -1847,6 +1883,24 @@ function sortTable(key, silent = false) {
   renderTabla();
 }
 
+// Permite confirmar manualmente que un título SÍ está en el catálogo, aunque el matching
+// automático no lo haya detectado (típico en capítulos de libro: la cita trae el título
+// del capítulo, no el del libro contenedor, así que el comparador de texto no los relaciona).
+// El cambio recalcula tarjetas, gráficos y paneles al instante.
+function marcarDisponibleManual(id, marcado) {
+  const r = allResults.find(x => x._id === id);
+  if (!r) return;
+  if (marcado) {
+    r.estado = 'sin-uso';
+    r._manual = true;
+  } else {
+    r.estado = r.estadoOriginal;
+    r._manual = false;
+  }
+  if (ultimoRefs && ultimoCirc) renderDashboard(ultimoRefs, ultimoCirc, allResults);
+  aplicarFiltros();
+}
+
 function renderTabla() {
   const tbody = document.getElementById('tableBody');
   const start = currentPage * PAGE_SIZE;
@@ -1871,10 +1925,29 @@ function renderTabla() {
     // Estado badge
     let estadoBadge = '';
     if (r.estado==='con-uso')       estadoBadge = `<span class="estado-badge estado-conuso">✅ ${r.prestamos} préstamos</span>`;
+    else if (r.estado==='sin-uso' && r._manual) estadoBadge = '<span class="estado-badge estado-disponible">✓ Disponible <span style="font-size:9px;opacity:.75;">(revisión manual)</span></span>';
     else if (r.estado==='sin-uso')  estadoBadge = '<span class="estado-badge estado-disponible">📚 En catálogo, sin uso</span>';
     else if (r.estado==='no-catalogo') estadoBadge = '<span class="estado-badge estado-nocatalogo">❌ No en catálogo</span>';
-    else if (r.estado==='no-aplica') estadoBadge = '<span class="estado-badge estado-noaplica">— Artículo</span>';
+    else if (r.estado==='no-aplica') {
+      const etiquetasNoAplica = { articulo: '— Artículo', ponencia: '— Ponencia/Congreso', web: '— Recurso web' };
+      estadoBadge = `<span class="estado-badge estado-noaplica">${etiquetasNoAplica[r.parsed?.tipoNoAplica] || '— Artículo'}</span>`;
+    }
     else estadoBadge = '<span class="estado-badge estado-noenc">? No verificado</span>';
+
+    // Selector de revisión manual: solo tiene sentido para lo marcado "no en catálogo"
+    // (ej. capítulos de libro cuyo libro contenedor sí está, pero el matching automático no lo detecta)
+    let manualCell = '';
+    if (r.estadoOriginal === 'no-catalogo') {
+      manualCell = r._manual
+        ? `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:3px;">
+             <input type="checkbox" checked onchange="marcarDisponibleManual(${r._id}, this.checked)" style="cursor:pointer;">
+             confirmado en catálogo
+           </label>`
+        : `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:3px;">
+             <input type="checkbox" onchange="marcarDisponibleManual(${r._id}, this.checked)" style="cursor:pointer;">
+             sí está (revisión manual)
+           </label>`;
+    }
 
     // Préstamos cell — muestra préstamos del programa; total general como referencia
     const p  = r.prestamos;       // del programa (o totales si no hay programa)
@@ -1915,7 +1988,7 @@ function renderTabla() {
       <td class="ref-text"><div class="ref-truncated" title="${r.ref.replace(/<[^>]*>/g,'').replace(/"/g,'&quot;')}">${refDisplay}</div></td>
       ${matchCell}
       ${prestamosCell}
-      <td>${estadoBadge}</td>
+      <td>${estadoBadge}${manualCell}</td>
     </tr>`;
   }).join('');
 
