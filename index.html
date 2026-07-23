@@ -268,10 +268,11 @@ body {
 /* ── SUMMARY CARDS ── */
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
+@media(max-width:1100px){.cards-grid{grid-template-columns:repeat(3,1fr);}}
 @media(max-width:900px){.cards-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:500px){.cards-grid{grid-template-columns:1fr;}}
 
@@ -299,6 +300,7 @@ body {
 .card.c-green { border-top-color: var(--green); color: var(--green); }
 .card.c-red { border-top-color: var(--red); color: var(--red); }
 .card.c-gold { border-top-color: var(--gold); color: var(--gold); }
+.card.c-purple { border-top-color: #7c3aed; color: #7c3aed; }
 .card .card-icon { font-size: 22px; margin-bottom: 8px; }
 .card .card-value {
   font-family: 'Playfair Display', serif;
@@ -714,11 +716,22 @@ body {
     </div>
 
     <!-- Período y Programa -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:20px;">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
       <div>
-        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Período cubierto</label>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Período cubierto (rótulo del reporte)</label>
         <input type="text" id="inputPeriodo" class="filter-search" style="width:100%" placeholder="Ej. 2023–2025" value="2023–2025">
       </div>
+      <div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Filtrar circulación por año (opcional)</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="number" id="inputAnioDesde" class="filter-search" style="width:100%" placeholder="Desde">
+          <span style="color:var(--muted);">–</span>
+          <input type="number" id="inputAnioHasta" class="filter-search" style="width:100%" placeholder="Hasta">
+        </div>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:3px;" id="anioRangoHint">Vacío = usa todo el historial disponible</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
       <div>
         <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Carrera / Programa</label>
         <input type="text" id="inputCarrera" class="filter-search" style="width:100%" placeholder="Se detecta automáticamente">
@@ -754,7 +767,7 @@ body {
       <div class="card c-green">
         <div class="card-icon">✅</div>
         <div class="card-value" id="cConUso">0%</div>
-        <div class="card-label">Con circulación</div>
+        <div class="card-label">Cobertura de libros</div>
         <div class="card-sub" id="cConUsoN">0 referencias en uso</div>
       </div>
       <div class="card c-red">
@@ -768,6 +781,12 @@ body {
         <div class="card-value" id="cNoCat">0</div>
         <div class="card-label">No en catálogo <span style="font-size:9px;font-weight:500;letter-spacing:0;text-transform:none;background:rgba(201,151,0,.12);padding:1px 6px;border-radius:10px;margin-left:4px;">refs</span></div>
         <div class="card-sub" id="cNoCatSub">Posible adquisición</div>
+      </div>
+      <div class="card c-purple">
+        <div class="card-icon">📄</div>
+        <div class="card-value" id="cArticulos">0</div>
+        <div class="card-label">Artículos científicos</div>
+        <div class="card-sub" id="cArticulosSub">Excluidos del cálculo · disponibles en línea</div>
       </div>
     </div>
 
@@ -911,6 +930,8 @@ function handleFile(tipo, file) {
       document.getElementById('fnCirc').textContent = file.name;
       // Poblar dropdown de programas
       poblarSelectPrograma(wb);
+      // Detectar rango de años disponible según la columna de fecha
+      detectarRangoAnios(wb);
     } else {
       rawCat = wb;
       document.getElementById('dzCat').classList.add('loaded');
@@ -946,6 +967,41 @@ function clearFile(tipo) {
 
 function checkReady() {
   document.getElementById('btnProcesar').disabled = !(rawExt && rawCirc);
+}
+
+function detectarRangoAnios(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const hintEl = document.getElementById('anioRangoHint');
+
+  let headerRow = 0;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const r = rows[i].map(c2 => norm(String(c2)));
+    if (r.some(c2 => c2.includes('titulo') || c2.includes('signatura') || c2.includes('autor') || c2.includes('inventario') || c2.includes('barcode') || c2.includes('fecha'))) {
+      headerRow = i; break;
+    }
+  }
+  const headers = rows[headerRow].map(c2 => norm(String(c2)));
+  const iFecha = headers.findIndex(h => h.includes('fecha') || h.includes('date'));
+
+  if (iFecha === -1) {
+    if (hintEl) hintEl.textContent = 'No se detectó columna de fecha en este archivo — el filtro no se podrá aplicar';
+    return;
+  }
+
+  let min = null, max = null;
+  for (let i = headerRow + 1; i < rows.length; i++) {
+    const anio = extraerAnio(rows[i][iFecha]);
+    if (anio) {
+      if (min === null || anio < min) min = anio;
+      if (max === null || anio > max) max = anio;
+    }
+  }
+  if (min && max) {
+    document.getElementById('inputAnioDesde').placeholder = min;
+    document.getElementById('inputAnioHasta').placeholder = max;
+    if (hintEl) hintEl.textContent = `Datos disponibles: ${min}–${max} · vacío = usa todo el rango`;
+  }
 }
 
 function poblarSelectPrograma(wb) {
@@ -995,6 +1051,19 @@ function norm(t) {
     .replace(/\s+/g, ' ').trim();
 }
 
+// Extrae el año de una celda de fecha, sin importar si SheetJS la entregó
+// como objeto Date, como número de serie de Excel o como texto.
+function extraerAnio(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return v.getFullYear();
+  if (typeof v === 'number') {
+    const d = XLSX.SSF.parse_date_code(v);
+    return d ? d.y : null;
+  }
+  const m = String(v).match(/(\d{4})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 function keywords(text) {
   return norm(text).split(' ').filter(w => w.length > 3 && !STOP.has(w));
 }
@@ -1003,7 +1072,13 @@ function parseRef(ref) {
   const s = String(ref || '').trim();
 
   // Detectar artículos de revista → no aplica para circulación física
-  const isArticle = /journal|revista|doi\.org|issn|transactions|proceedings|vol\.|pp\.|issue|quarterly/i.test(s);
+  // Señal fuerte de capítulo dentro de un libro editado -> NO cuenta como artículo
+  // (formato "En/In [Editor(es)] (Ed./Eds.), Título del libro (pp. X-Y)")
+  const esCapituloLibro = /\b(en|in)\s+[^.(]{0,80}\((?:ed\.?s?|eds\.?|comp\.?|coord\.?|editor)/i.test(s);
+  // Patrón clásico de artículo de revista: "Nombre, volumen(número), páginas" (ej. "28(50), 1525")
+  const tieneVolNum = /,\s*\d{1,4}\s*\(\d{1,4}\)\s*,\s*\d/.test(s);
+  const tieneKeywordRevista = /\b(journal|revista|issn|transactions|proceedings|quarterly)\b/i.test(s);
+  const isArticle = !esCapituloLibro && (tieneVolNum || tieneKeywordRevista);
 
   // Extraer apellido(s) del autor: primer token tipo "Apellido,"
   let lastName = '';
@@ -1106,7 +1181,7 @@ function parsearExtractor(wb) {
   return refs;
 }
 
-function parsearCirculacion(wb) {
+function parsearCirculacion(wb, anioDesde, anioHasta) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
@@ -1123,6 +1198,7 @@ function parsearCirculacion(wb) {
   const iSignatura  = headers.findIndex(h => h.includes('signatura') || h.includes('topog'));
   const iTitulo     = headers.findIndex(h => h.includes('titulo') || h.includes('titu'));
   const iAutor      = headers.findIndex(h => h.includes('autor'));
+  const iFecha      = headers.findIndex(h => h.includes('fecha') || h.includes('date'));
   // Número de inventario: clave de join exacta con el topográfico
   const iInventario = headers.findIndex(h =>
     h === 'inventario' || h === 'barcode' ||
@@ -1134,7 +1210,10 @@ function parsearCirculacion(wb) {
   );
 
   const usaInventario = iInventario !== -1;
+  const filtrarPorAnio = iFecha !== -1 && (anioDesde || anioHasta);
   const map = new Map();
+  let excluidosPorAnio = 0;
+  let totalFilas = 0;
 
   for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i];
@@ -1145,6 +1224,15 @@ function parsearCirculacion(wb) {
     const inventario = usaInventario ? String(r[iInventario] || '').trim() : '';
 
     if (!titulo && !inventario) continue;
+    totalFilas++;
+
+    if (filtrarPorAnio) {
+      const anio = extraerAnio(r[iFecha]);
+      if (anio && ((anioDesde && anio < anioDesde) || (anioHasta && anio > anioHasta))) {
+        excluidosPorAnio++;
+        continue;
+      }
+    }
 
     // Clave primaria: N° inventario (único por ejemplar); fallback: título+autor
     const key = (usaInventario && inventario) ? inventario : (norm(titulo) + '||' + norm(autor));
@@ -1159,7 +1247,11 @@ function parsearCirculacion(wb) {
     const cn = norm(carrera);
     if (cn) item.porCarrera[cn] = (item.porCarrera[cn] || 0) + 1;
   }
-  return [...map.values()];
+  const result = [...map.values()];
+  result._sinFecha = iFecha === -1;
+  result._excluidosPorAnio = excluidosPorAnio;
+  result._totalFilas = totalFilas;
+  return result;
 }
 
 function parsearCatalogo(wb) {
@@ -1261,10 +1353,19 @@ async function procesarDatos() {
 
     addLog('▸ Leyendo Excel de Circulación KOHA...');
     await new Promise(r => setTimeout(r, 30));
-    const circ = parsearCirculacion(rawCirc);
+    const anioDesdeVal = parseInt(document.getElementById('inputAnioDesde').value, 10) || null;
+    const anioHastaVal = parseInt(document.getElementById('inputAnioHasta').value, 10) || null;
+    const circ = parsearCirculacion(rawCirc, anioDesdeVal, anioHastaVal);
     const totalTransacciones = circ.reduce((a,c)=>a+c.prestamos,0);
     const usaInvCirc = circ.some(c => c.numero_inventario);
     addLog(`  ✓ ${circ.length} títulos únicos, ${totalTransacciones.toLocaleString()} préstamos totales en el período`);
+    if (anioDesdeVal || anioHastaVal) {
+      if (circ._sinFecha) {
+        addLog(`  ⚠️ Pediste filtrar por año, pero no se detectó columna de fecha en el archivo de circulación — se usó todo el historial`, 'warn');
+      } else {
+        addLog(`  🗓 Filtro de año aplicado (${anioDesdeVal || '…'}–${anioHastaVal || '…'}): ${circ._excluidosPorAnio.toLocaleString()} préstamos excluidos de ${circ._totalFilas.toLocaleString()} filas totales`);
+      }
+    }
     if (usaInvCirc)
       addLog('  🔗 Columna N° inventario detectada en Circulación');
     else
@@ -1445,6 +1546,11 @@ function renderDashboard(refs, circ, results) {
   document.getElementById('cNoCatSub').textContent = hasCat
     ? 'No encontradas en el catálogo'
     : `Carga el catálogo para ver · ${totalPrestamos.toLocaleString('es-CL')} préstamos totales`;
+  const articulosN = results.filter(r => r.estado === 'no-aplica').length;
+  document.getElementById('cArticulos').textContent = articulosN;
+  document.getElementById('cArticulosSub').textContent = articulosN > 0
+    ? 'Excluidos del % de cobertura · disponibles en línea'
+    : 'No se detectaron artículos en esta bibliografía';
 
   // Programa activo global
   programaActivo = document.getElementById('inputPrograma').value.trim();
