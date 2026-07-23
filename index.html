@@ -268,11 +268,11 @@ body {
 /* ── SUMMARY CARDS ── */
 .cards-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
-@media(max-width:1100px){.cards-grid{grid-template-columns:repeat(3,1fr);}}
+@media(max-width:1300px){.cards-grid{grid-template-columns:repeat(3,1fr);}}
 @media(max-width:900px){.cards-grid{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:500px){.cards-grid{grid-template-columns:1fr;}}
 
@@ -301,6 +301,7 @@ body {
 .card.c-red { border-top-color: var(--red); color: var(--red); }
 .card.c-gold { border-top-color: var(--gold); color: var(--gold); }
 .card.c-purple { border-top-color: #7c3aed; color: #7c3aed; }
+.card.c-blue { border-top-color: #1e40af; color: #1e40af; }
 .card .card-icon { font-size: 22px; margin-bottom: 8px; }
 .card .card-value {
   font-family: 'Playfair Display', serif;
@@ -764,10 +765,16 @@ body {
         <div class="card-label">Referencias totales</div>
         <div class="card-sub" id="cAsig">0 asignaturas</div>
       </div>
+      <div class="card c-blue">
+        <div class="card-icon">📊</div>
+        <div class="card-value" id="cCobertura">—</div>
+        <div class="card-label">% de Cobertura</div>
+        <div class="card-sub" id="cCoberturaSub">Carga el catálogo para calcular</div>
+      </div>
       <div class="card c-green">
         <div class="card-icon">✅</div>
         <div class="card-value" id="cConUso">0%</div>
-        <div class="card-label">Cobertura de libros</div>
+        <div class="card-label">% de Circulación</div>
         <div class="card-sub" id="cConUsoN">0 referencias en uso</div>
       </div>
       <div class="card c-red">
@@ -798,7 +805,7 @@ body {
         <canvas id="chartDonut" height="200"></canvas>
       </div>
       <div class="chart-panel chart-panel-wide">
-        <div class="chart-title">Cobertura por asignatura (% bibliografía con circulación)</div>
+        <div class="chart-title">% de Circulación por Asignatura</div>
         <canvas id="chartAsig" height="200"></canvas>
       </div>
     </div>
@@ -1552,6 +1559,18 @@ function renderDashboard(refs, circ, results) {
     ? 'Excluidos del % de cobertura · disponibles en línea'
     : 'No se detectaron artículos en esta bibliografía';
 
+  // % de Cobertura: de los títulos de libro (bibliografía sin artículos),
+  // cuántos están físicamente presentes en el catálogo — con o sin uso.
+  if (hasCat && verificables > 0) {
+    const enCatalogo = verificables - noCatalog.length;
+    const pctCobertura = Math.round((enCatalogo / verificables) * 100);
+    document.getElementById('cCobertura').textContent = pctCobertura + '%';
+    document.getElementById('cCoberturaSub').textContent = `${enCatalogo} de ${verificables} libros están en la colección`;
+  } else {
+    document.getElementById('cCobertura').textContent = '—';
+    document.getElementById('cCoberturaSub').textContent = 'Carga el catálogo para calcular';
+  }
+
   // Programa activo global
   programaActivo = document.getElementById('inputPrograma').value.trim();
 
@@ -1589,29 +1608,33 @@ function renderDashboard(refs, circ, results) {
   ).join('') || '<div style="padding:16px;color:var(--muted);font-size:12px;">Sin datos</div>';
 
   // Panel: sin catálogo (prioridad de adquisición) o sin circulación
-  // Panel: sin catálogo o sin circulación (bibliografía básica)
-  const sinCatBasica  = results.filter(r => r.estado === 'no-catalogo' && normTipo(r.tipo).includes('basi'));
-  const sinCircBasica = results.filter(r => r.estado === 'sin-uso'     && normTipo(r.tipo).includes('basi'));
+  // Si el Excel no distingue "Básica" de otros tipos (ej. solo usa "Obligatoria"),
+  // no restringimos el panel a una categoría que no existe: usamos todo el conjunto.
+  const hayTipoBasica  = results.some(r => normTipo(r.tipo).includes('basi'));
+  const filtroTipoBase = r => !hayTipoBasica || normTipo(r.tipo).includes('basi');
+  const sufijoPanel    = hayTipoBasica ? ' · Bibliografía Básica' : '';
+  const sinCatBasica  = results.filter(r => r.estado === 'no-catalogo' && filtroTipoBase(r));
+  const sinCircBasica = results.filter(r => r.estado === 'sin-uso'     && filtroTipoBase(r));
 
   let topSinBase, panelLabel, etiqueta, mensajeOk, colorEtiq;
   if (sinCatBasica.length > 0) {
     topSinBase  = sinCatBasica.slice(0, 8);
-    panelLabel  = '🔴 Sin catálogo · Bibliografía Básica';
+    panelLabel  = `🔴 Sin catálogo${sufijoPanel}`;
     etiqueta    = 'No en catálogo';
     colorEtiq   = '#92400e';
-    mensajeOk   = '✅ Toda la bibliografía básica está en el catálogo';
+    mensajeOk   = `✅ Toda la bibliografía${sufijoPanel.toLowerCase()} está en el catálogo`;
   } else if (sinCircBasica.length > 0) {
     topSinBase  = sinCircBasica.slice(0, 8);
-    panelLabel  = '📭 Sin circulación · Bibliografía Básica';
+    panelLabel  = `📭 Sin circulación${sufijoPanel}`;
     etiqueta    = '0 préstamos';
     colorEtiq   = 'var(--red)';
-    mensajeOk   = '✅ Toda la bibliografía básica tiene circulación';
+    mensajeOk   = `✅ Toda la bibliografía${sufijoPanel.toLowerCase()} tiene circulación`;
   } else {
     topSinBase  = [];
-    panelLabel  = hasCat ? '📭 Sin catálogo · Bibliografía Básica' : '📭 Sin circulación · Bibliografía Básica';
+    panelLabel  = hasCat ? `📭 Sin catálogo${sufijoPanel}` : `📭 Sin circulación${sufijoPanel}`;
     etiqueta    = '';
     colorEtiq   = 'var(--muted)';
-    mensajeOk   = hasCat ? '✅ Toda la bibliografía básica está en el catálogo' : '✅ Toda la bibliografía básica tiene circulación';
+    mensajeOk   = hasCat ? `✅ Toda la bibliografía${sufijoPanel.toLowerCase()} está en el catálogo` : `✅ Toda la bibliografía${sufijoPanel.toLowerCase()} tiene circulación`;
   }
 
   document.querySelector('#topSinCirc').closest('.top-panel').querySelector('.top-panel-header').textContent = panelLabel;
@@ -1715,7 +1738,7 @@ function renderCharts(results) {
       <div style="font-size:28px">📋</div>
       <div style="font-weight:700;color:var(--navy);font-size:13px;">Sin datos de asignatura</div>
       <div style="color:var(--muted);font-size:12px;max-width:260px;line-height:1.5;">
-        El Extractor Masivo no tiene columna <strong>"Asignatura"</strong>.<br>Agréguela para ver la cobertura por curso.
+        El Extractor Masivo no tiene columna <strong>"Asignatura"</strong>.<br>Agréguela para ver la circulación por curso.
       </div>`;
     return;
   }
