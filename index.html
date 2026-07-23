@@ -1078,7 +1078,7 @@ function parsearExtractor(wb) {
 
   const headers = rows[headerRow].map(c => norm(String(c)));
   const iClave = headers.findIndex(h => h.includes('clave'));
-  const iAsig  = headers.findIndex(h => h.includes('asignatura') || h.includes('curso') || h.includes('materia'));
+  const iAsig  = headers.findIndex((h, idx) => idx !== iClave && (h.includes('asignatura') || h.includes('curso') || h.includes('materia')));
   const iTipo  = headers.findIndex(h => h.includes('tipo') || h.includes('bibliog'));
   const iRef   = headers.findIndex(h => h.includes('referencia') || h.includes('ref'));
 
