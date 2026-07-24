@@ -711,7 +711,7 @@ body {
         <span class="dz-tag" style="background:rgba(109,40,217,.1);color:#6d28d9;">Catálogo KOHA</span>
         <span class="dz-icon">🗄️</span>
         <div class="dz-label">Excel del Catálogo (opcional pero recomendado)</div>
-        <div class="dz-hint">Exportación de la colección KOHA — permite distinguir "no disponible en biblioteca" de "disponible pero sin uso"<br><span style="font-size:10px;color:#7c3aed;">Mismo formato del Verificador de Catálogo de la Suite Académica</span></div>
+        <div class="dz-hint">Exportación de la colección KOHA — sin esto solo se mide circulación; con esto se combina <strong>disponibilidad + uso</strong>: distingue "no disponible en biblioteca" (posible adquisición) de "disponible pero sin uso" (revisar pertinencia).<br><span style="font-size:10px;color:#7c3aed;">Mismo formato del Verificador de Catálogo de la Suite Académica</span></div>
         <div class="dz-filename" id="fnCat"></div>
       </div>
     </div>
@@ -743,6 +743,9 @@ body {
           <option value="">— Carga primero el Excel de circulación —</option>
         </select>
         <div style="font-size:10.5px;color:var(--muted);margin-top:3px;">Se llena automáticamente al cargar el Excel de circulación</div>
+        <div style="font-size:10.5px;color:var(--amber);margin-top:5px;line-height:1.5;background:var(--amber-light);padding:6px 8px;border-radius:6px;">
+          ⚠️ <strong>Sin elegir un programa</strong>, el % de circulación cuenta préstamos de <strong>toda la universidad</strong> — un libro compartido con pregrado puede mostrar alta circulación aunque nadie del programa evaluado lo use. Para medir si <em>este programa</em> usa su propia bibliografía (lo relevante para acreditación), elegí acá la carrera/programa correspondiente. Este campo es genérico: para evaluar otro programa, solo cargá su planilla de bibliografía y elegí su carrera aquí — no hay nada fijo en el código.
+        </div>
       </div>
     </div>
 
@@ -759,6 +762,9 @@ body {
 
     <!-- Summary Cards -->
     <div class="cards-grid">
+      <div style="grid-column: 1/-1; font-size: 11.5px; color: var(--muted); margin-bottom: -6px;">
+        📊 Los totales de arriba cuentan <strong>títulos únicos</strong> (una obra citada en varias asignaturas cuenta 1 vez). El gráfico por asignatura y la tabla de detalle sí muestran cada aparición, porque cada asignatura la exige de verdad.
+      </div>
       <div class="card c-navy">
         <div class="card-icon">📚</div>
         <div class="card-value" id="cTotal">0</div>
@@ -806,6 +812,7 @@ body {
       </div>
       <div class="chart-panel chart-panel-wide">
         <div class="chart-title">% de Circulación por Asignatura</div>
+        <div style="font-size:11px;color:var(--muted);margin:-8px 0 12px;">🟩 Con circulación = hay préstamo registrado en KOHA · 🟦 Sin circulación = no se encontró préstamo · 🟥 No en catálogo = ni siquiera está en la colección (solo aparece si cargaste el Catálogo). Las tres franjas siempre suman 100%.</div>
         <canvas id="chartAsig" height="200"></canvas>
       </div>
     </div>
@@ -1082,7 +1089,7 @@ function parseRef(ref) {
   // Detectar artículos, ponencias/congresos y recursos web → no aplica para circulación física
   // Señal fuerte de capítulo dentro de un libro editado -> NO cuenta como artículo
   // (formato "En/In [Editor(es)] (Ed./Eds.), Título del libro (pp. X-Y)")
-  const esCapituloLibro = /\b(en|in)\s+[^.(]{0,80}\((?:ed\.?s?|eds\.?|comp\.?|coord\.?|editor)/i.test(s);
+  const esCapituloLibro = /\b(en|in)\s+[^(]{0,100}\((?:ed\.?s?|eds\.?|comp\.?|coord\.?|editor)/i.test(s);
 
   let isArticle = false, tipoNoAplica = null;
   if (!esCapituloLibro) {
@@ -1091,13 +1098,17 @@ function parseRef(ref) {
     const tieneVolNumParen = /,\s*\d{1,4}\s*\(\d{1,4}\)\s*,\s*\d/.test(s);
     const tieneVolNumComa  = /,\s*\d{1,4}\s*,\s*\d{1,4}\s*,\s*\d{1,4}[\u2013\-]\d{1,4}/.test(s);
     const tieneKeywordRevista = /\b(journal|revista|issn|transactions|proceedings|quarterly)\b/i.test(s);
-    if (tieneVolNumParen || tieneVolNumComa || tieneKeywordRevista) {
+    // DOI: señal casi inequívoca de artículo de revista (los libros casi nunca lo llevan así citado)
+    const tieneDOI = /\bdoi\s*:?\s*10\.\d{4,9}\//i.test(s) || /\bdx\.doi\.org\/10\.\d{4,9}\//i.test(s) || /\bhttps?:\/\/doi\.org\/10\.\d{4,9}\//i.test(s);
+    if (tieneVolNumParen || tieneVolNumComa || tieneKeywordRevista || tieneDOI) {
       isArticle = true; tipoNoAplica = 'articulo';
     } else if (/\b(presentado en|ponencia|colloque|coloquio|congreso|symposium|conference)\b/i.test(s)) {
       // Ponencia o presentación en congreso — no es un libro físico catalogable
       isArticle = true; tipoNoAplica = 'ponencia';
-    } else if (/\b(disponible en|recuperado de)\s*:?\s*http/i.test(s)) {
-      // Recurso web explícito (distinto de un DOI de libro impreso)
+    } else if (/\b(disponible|recuperado)\b[^:]{0,50}:?\s*https?:\/\//i.test(s) || /https?:\/\//i.test(s)) {
+      // Recurso web: cualquier variante de "Disponible en/desde/sobre el sitio...: http(s)://"
+      // o, en última instancia, cualquier cita que traiga una URL cruda — casi nunca es un
+      // libro físico catalogable si trae un link directo al recurso.
       isArticle = true; tipoNoAplica = 'web';
     }
   }
@@ -1107,13 +1118,21 @@ function parseRef(ref) {
   const authorM = s.match(/^([A-ZÁÉÍÓÚÑÜÀ][a-záéíóúñüà\-]{2,}(?:,\s*[A-ZÁÉÍÓÚÑ][\w\.]*)?)/);
   if (authorM) lastName = norm(authorM[1].split(',')[0]);
 
+  // Extraer título: para capítulos de libro, el título que hay que buscar en el
+  // catálogo es el del LIBRO CONTENEDOR (después de "(Eds.),"), no el del capítulo
+  // — el capítulo no es un ítem catalogable por separado.
+  let titleRaw = '';
+  if (esCapituloLibro) {
+    const libroM = s.match(/\((?:eds?\.?|comp\.?|coord\.?|editor)\.?\)\s*,?\s*([^(]{5,150}?)\s*(?:\(pp\.|\.\s|\.$|$)/i);
+    if (libroM) titleRaw = libroM[1].trim();
+  }
+
   // Extraer año
   const yearM = s.match(/\((\d{4})\)/);
   let year = yearM ? yearM[1] : '';
 
-  // Extraer título: después de (año). hasta siguiente punto o fin
-  // Soporta <i>...</i> y texto plano
-  let titleRaw = '';
+  // Soporta <i>...</i> y texto plano (solo si no se extrajo ya el título del libro contenedor)
+  if (!titleRaw) {
   if (yearM) {
     const italicM = s.match(/\(\d{4}\)[.)]\s*<i>([^<]+)<\/i>/i);
     if (italicM) {
@@ -1137,6 +1156,7 @@ function parseRef(ref) {
       titleRaw = corteM ? resto.slice(0, corteM.index) : resto;
       titleRaw = titleRaw.replace(/[,;\s]+$/, '');
     }
+  }
   }
 
   const kws = keywords(titleRaw || s);
@@ -1169,9 +1189,38 @@ function matchScore(parsed, circItem) {
   const f1 = parsed.keywords.length > 0 && titleKws.length > 0
     ? (2 * recall * precision / (recall + precision + .001))
     : 0;
-  const titleScore = f1 * 60;
+
+  // Penalización por año: si la referencia y el ítem del catálogo/circulación
+  // tienen años conocidos y distintos, es probable que sean obras DISTINTAS del
+  // mismo autor sobre un tema similar (frecuente en autores prolíficos que
+  // publican variantes del mismo campo de estudio) — no un error de matching.
+  // No lo descartamos del todo (a veces el año catalogado es el de una reedición),
+  // pero sí bajamos fuerte la confianza del título.
+  let penalizacionAnio = 1;
+  if (parsed.year && circItem.anio) {
+    const difAnio = Math.abs(parseInt(parsed.year, 10) - parseInt(circItem.anio, 10));
+    if (!isNaN(difAnio)) {
+      if (difAnio >= 5) penalizacionAnio = 0.15;       // casi seguro es otra obra del mismo autor
+      else if (difAnio >= 2) penalizacionAnio = 0.4;   // podría ser una reedición, pero dudoso
+    }
+  }
+  const titleScore = f1 * 60 * penalizacionAnio;
 
   return { score: authorScore + titleScore, tipo: 'normal' };
+}
+
+// Detecta si dos referencias parseadas son probablemente la MISMA obra citada en
+// distintas asignaturas (repetición legítima, ej. un libro metodológico común a
+// varios cursos) en vez de un error de matching. Mismo año (si ambos lo tienen)
+// + alto solapamiento de keywords del título = misma obra.
+function mismaObra(p1, p2) {
+  if (!p1 || !p2) return false;
+  if (p1.year && p2.year && p1.year !== p2.year) return false;
+  const k1 = new Set(p1.keywords || []), k2 = new Set(p2.keywords || []);
+  if (k1.size === 0 || k2.size === 0) return false;
+  let inter = 0;
+  k1.forEach(k => { if (k2.has(k)) inter++; });
+  return (inter / Math.max(k1.size, k2.size)) >= 0.7;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1540,6 +1589,39 @@ async function procesarDatos() {
     ultimoRefs = refs;
     ultimoCirc = circ;
 
+    // Deduplicar por título único: si la MISMA obra aparece citada en varias
+    // asignaturas (ej. un libro de metodología común a 3 cursos), las cards
+    // globales no deben contarla 3 veces — cada asignatura sigue viendo su
+    // propia fila en la tabla y en el gráfico por asignatura, pero las
+    // estadísticas agregadas (cards, donut) cuentan 1 título, no 3 referencias.
+    let nRepeticionN = 0;
+    const grupoIdPorRef = new Map();
+    let nextGrupoId = 0;
+    const porMatchGlobal = new Map();
+    allResults.forEach(r => {
+      const mi = r.matchItem;
+      if (!mi) return;
+      const key = norm(mi.titulo) + '||' + norm(mi.autor || '');
+      if (!porMatchGlobal.has(key)) porMatchGlobal.set(key, []);
+      porMatchGlobal.get(key).push(r);
+    });
+    porMatchGlobal.forEach(group => {
+      if (group.length <= 1) return;
+      const procesados = new Set();
+      group.forEach((r1, i) => {
+        if (procesados.has(r1)) return;
+        const sub = [r1]; procesados.add(r1);
+        group.slice(i + 1).forEach(r2 => { if (!procesados.has(r2) && mismaObra(r1.parsed, r2.parsed)) { sub.push(r2); procesados.add(r2); } });
+        if (sub.length > 1) {
+          nRepeticionN++;
+          const id = nextGrupoId++;
+          sub.forEach(r => { grupoIdPorRef.set(r, id); r.repetidaEn = sub.filter(g => g !== r).map(g => g.asignatura); });
+        }
+      });
+    });
+    allResults.forEach(r => { if (!grupoIdPorRef.has(r)) grupoIdPorRef.set(r, nextGrupoId++); r.tituloUnicoId = grupoIdPorRef.get(r); });
+    if (nRepeticionN) addLog(`  ℹ ${nRepeticionN} obra(s) citada(s) en más de una asignatura — se cuentan 1 sola vez en las cards globales`);
+
     addLog(`  ✓ Con uso: ${conUsoN} · Sin circulación: ${sinUsoN} · No en catálogo: ${noCatN} · Artículos: ${noaplica}`);
     addLog('▸ Construyendo dashboard...');
     await new Promise(r => setTimeout(r, 30));
@@ -1563,33 +1645,43 @@ async function procesarDatos() {
 // ══════════════════════════════════════════════════════════
 // RENDER DASHBOARD
 // ══════════════════════════════════════════════════════════
+function unicos(lista) {
+  const vistos = new Set();
+  return lista.filter(r => {
+    if (vistos.has(r.tituloUnicoId)) return false;
+    vistos.add(r.tituloUnicoId);
+    return true;
+  });
+}
+
 function renderDashboard(refs, circ, results) {
   const periodo = document.getElementById('inputPeriodo').value;
   const totalPrestamos = programaActivo
     ? circ.reduce((a,c2) => a + (c2.prestamosEfectivos||0), 0)
     : circ.reduce((a,c2) => a + c2.prestamos, 0);
 
-  // Cards
+  // Cards — deduplicadas por título único (ver nota en procesarDatos)
   const normTipo = t => (t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  const conUso    = results.filter(r => r.estado === 'con-uso');
-  const sinUso    = results.filter(r => r.estado === 'sin-uso');
-  const noCatalog = results.filter(r => r.estado === 'no-catalogo');
+  const conUso    = unicos(results.filter(r => r.estado === 'con-uso'));
+  const sinUso    = unicos(results.filter(r => r.estado === 'sin-uso'));
+  const noCatalog = unicos(results.filter(r => r.estado === 'no-catalogo'));
   const asignaturas = [...new Set(refs.map(r=>r.asignatura).filter(Boolean))];
-  const verificables = results.filter(r => r.estado !== 'no-aplica').length;
-  const pct = verificables > 0 ? Math.round((conUso.length / verificables) * 100) : 0;
+  const totalUnicos = unicos(results).length;
+  const verificablesU = unicos(results.filter(r => r.estado !== 'no-aplica')).length;
+  const pct = verificablesU > 0 ? Math.round((conUso.length / verificablesU) * 100) : 0;
   const hasCat = results.some(r => r.estado === 'no-catalogo');
 
-  document.getElementById('cTotal').textContent = refs.length;
-  document.getElementById('cAsig').textContent = asignaturas.length + ' asignaturas';
+  document.getElementById('cTotal').textContent = totalUnicos;
+  document.getElementById('cAsig').textContent = asignaturas.length + ` asignaturas · ${results.length} referencias curriculares`;
   document.getElementById('cConUso').textContent = pct + '%';
-  document.getElementById('cConUsoN').textContent = conUso.length + ' referencias en uso';
+  document.getElementById('cConUsoN').textContent = conUso.length + ' títulos únicos en uso';
   document.getElementById('cSinUso').textContent = sinUso.length;
   document.getElementById('cSinUsoSub').textContent = hasCat ? 'En catálogo, sin préstamos registrados' : 'Sin circulación detectada';
   document.getElementById('cNoCat').textContent = hasCat ? noCatalog.length : '—';
   document.getElementById('cNoCatSub').textContent = hasCat
     ? 'No encontradas en el catálogo'
     : `Carga el catálogo para ver · ${totalPrestamos.toLocaleString('es-CL')} préstamos totales`;
-  const articulosN = results.filter(r => r.estado === 'no-aplica').length;
+  const articulosN = unicos(results.filter(r => r.estado === 'no-aplica')).length;
   document.getElementById('cArticulos').textContent = articulosN;
   document.getElementById('cArticulosSub').textContent = articulosN > 0
     ? 'Excluidos del % de cobertura · disponibles en línea'
@@ -1597,11 +1689,11 @@ function renderDashboard(refs, circ, results) {
 
   // % de Cobertura: de los títulos de libro (bibliografía sin artículos),
   // cuántos están físicamente presentes en el catálogo — con o sin uso.
-  if (hasCat && verificables > 0) {
-    const enCatalogo = verificables - noCatalog.length;
-    const pctCobertura = Math.round((enCatalogo / verificables) * 100);
+  if (hasCat && verificablesU > 0) {
+    const enCatalogo = verificablesU - noCatalog.length;
+    const pctCobertura = Math.round((enCatalogo / verificablesU) * 100);
     document.getElementById('cCobertura').textContent = pctCobertura + '%';
-    document.getElementById('cCoberturaSub').textContent = `${enCatalogo} de ${verificables} libros están en la colección`;
+    document.getElementById('cCoberturaSub').textContent = `${enCatalogo} de ${verificablesU} títulos únicos están en la colección`;
   } else {
     document.getElementById('cCobertura').textContent = '—';
     document.getElementById('cCoberturaSub').textContent = 'Carga el catálogo para calcular';
@@ -1706,18 +1798,18 @@ function renderDashboard(refs, circ, results) {
 let chartDonut = null, chartAsig = null;
 
 function renderCharts(results) {
-  const conUso   = results.filter(r => r.estado === 'con-uso').length;
-  const sinUso   = results.filter(r => r.estado === 'sin-uso').length;
-  const noAplica = results.filter(r => r.estado === 'no-aplica').length;
+  const conUso   = unicos(results.filter(r => r.estado === 'con-uso')).length;
+  const sinUso   = unicos(results.filter(r => r.estado === 'sin-uso')).length;
+  const noAplica = unicos(results.filter(r => r.estado === 'no-aplica')).length;
 
   const gold  = '#C99700';
   const green = '#1a7a4a';
   const red   = '#b02a37';
 
-  // ── Donut: cobertura global ──────────────────────────
+  // ── Donut: cobertura global (títulos únicos) ──────────────────────────
   if (chartDonut) chartDonut.destroy();
-  const noCatCount = results.filter(r => r.estado === 'no-catalogo').length;
-  const sinUsoCount = results.filter(r => r.estado === 'sin-uso').length;
+  const noCatCount = unicos(results.filter(r => r.estado === 'no-catalogo')).length;
+  const sinUsoCount = sinUso;
   const hasCatChart = noCatCount > 0;
   chartDonut = new Chart(document.getElementById('chartDonut'), {
     type: 'doughnut',
@@ -1796,6 +1888,16 @@ function renderCharts(results) {
     const total = grupo.filter(r => r.estado !== 'no-aplica').length;
     return total > 0 ? Math.round(su / total * 100) : 0;
   });
+  // "No en catálogo" también cuenta dentro del mismo 100% — si no se dibuja como
+  // franja propia, queda un hueco invisible en la barra (verde+celeste < 100%,
+  // sin que se vea por qué). La agregamos siempre para que las franjas sumen 100%.
+  const asigNoCat = asignaturas.map(a => {
+    const grupo = results.filter(r => r.asignatura === a);
+    const nc    = grupo.filter(r => r.estado === 'no-catalogo').length;
+    const total = grupo.filter(r => r.estado !== 'no-aplica').length;
+    return total > 0 ? Math.round(nc / total * 100) : 0;
+  });
+  const hayNoCatalogo = asigNoCat.some(v => v > 0);
   const asigLabels = asignaturas.map(a => a.length > 35 ? a.slice(0, 33) + '\u2026' : a);
 
   // Altura dinámica: las barras horizontales requieren maintainAspectRatio:false + altura explícita
@@ -1810,8 +1912,9 @@ function renderCharts(results) {
     data: {
       labels: asigLabels,
       datasets: [
-        { label: 'Con circulación',       data: asigConUso, backgroundColor: green,    borderRadius: 0, borderSkipped: false },
-        { label: 'Sin circulación / uso', data: asigSinUso, backgroundColor: '#93c5fd', borderRadius: 0, borderSkipped: false }
+        { label: 'Con circulación', data: asigConUso, backgroundColor: green,    borderRadius: 0, borderSkipped: false },
+        { label: 'Sin circulación', data: asigSinUso, backgroundColor: '#93c5fd', borderRadius: 0, borderSkipped: false },
+        ...(hayNoCatalogo ? [{ label: 'No en catálogo', data: asigNoCat, backgroundColor: '#b02a37', borderRadius: 0, borderSkipped: false }] : [])
       ]
     },
     options: {
