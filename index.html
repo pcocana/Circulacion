@@ -9,26 +9,31 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <style>
 :root {
-  --navy: #002855;
-  --navy-mid: #00396b;
-  --navy-light: #e8eef5;
-  --gold: #C99700;
-  --gold-light: #fdf6e0;
+  /* Paleta institucional PUCV */
+  --rojo: #9d2c28;        /* Rojo PUCV — logotipo, títulos principales, bloques de peso visual */
+  --rojo-dark: #7c211d;
+  --rojo-light: #f6e6e5;
+  --navy: #005793;        /* Azul Institucional / Enlaces — botones, hipervínculos, estados activos */
+  --navy-mid: #00426f;
+  --navy-light: #e3edf4;
+  --gold: #b8860b;        /* Ámbar de apoyo (no institucional) — solo para estados de advertencia */
+  --gold-light: #fbf1de;
   --green: #1a7a4a;
   --green-light: #e6f4ed;
-  --red: #b02a37;
-  --red-light: #fce8ea;
+  --red: #9d2c28;         /* Reutiliza el Rojo PUCV como color de "peligro/sin uso" */
+  --red-light: #f6e6e5;
   --amber: #8a5c00;
   --amber-light: #fff3cd;
   --gray: #6c757d;
-  --gray-light: #f4f5f7;
-  --border: #dde2ea;
-  --text: #1a2233;
-  --muted: #6b7280;
+  --gray-light: #f0efec;
+  --border: #ddd9d3;
+  --text: #1f2624;        /* Negro / Texto institucional */
+  --muted: #5f6663;
   --white: #ffffff;
-  --shadow-sm: 0 1px 3px rgba(0,40,85,.08), 0 1px 2px rgba(0,40,85,.04);
-  --shadow: 0 4px 16px rgba(0,40,85,.1), 0 1px 4px rgba(0,40,85,.06);
-  --shadow-lg: 0 12px 40px rgba(0,40,85,.14);
+  --surface: #f8f8f7;     /* Blanco Tonal / Fondo institucional — reemplaza al blanco puro en tarjetas y paneles */
+  --shadow-sm: 0 1px 3px rgba(31,38,36,.08), 0 1px 2px rgba(31,38,36,.04);
+  --shadow: 0 4px 16px rgba(31,38,36,.1), 0 1px 4px rgba(31,38,36,.06);
+  --shadow-lg: 0 12px 40px rgba(31,38,36,.14);
   --radius: 10px;
   --radius-sm: 6px;
 }
@@ -37,7 +42,7 @@
 
 body {
   font-family: 'DM Sans', sans-serif;
-  background: #f0f3f8;
+  background: #edece9;
   color: var(--text);
   min-height: 100vh;
   font-size: 14px;
@@ -46,7 +51,7 @@ body {
 
 /* ── HEADER ── */
 .site-header {
-  background: var(--navy);
+  background: var(--rojo);
   padding: 0 32px;
   display: flex;
   align-items: center;
@@ -65,7 +70,7 @@ body {
 .site-header .logo-mark {
   width: 34px;
   height: 34px;
-  background: var(--gold);
+  background: var(--white);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -73,7 +78,7 @@ body {
   font-family: 'Playfair Display', serif;
   font-size: 16px;
   font-weight: 700;
-  color: var(--navy);
+  color: var(--rojo);
   flex-shrink: 0;
 }
 .site-header .brand-text {
@@ -99,9 +104,9 @@ body {
   gap: 8px;
 }
 .badge-periodo {
-  background: rgba(201,151,0,.2);
-  border: 1px solid rgba(201,151,0,.4);
-  color: #f0d060;
+  background: rgba(255,255,255,.16);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #ffffff;
   font-size: 11px;
   font-weight: 600;
   padding: 3px 10px;
@@ -118,7 +123,7 @@ body {
 
 /* ── UPLOAD PANEL ── */
 .upload-panel {
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   padding: 28px 32px;
@@ -128,7 +133,7 @@ body {
 .upload-panel h2 {
   font-family: 'Playfair Display', serif;
   font-size: 20px;
-  color: var(--navy);
+  color: var(--rojo);
   margin-bottom: 6px;
 }
 .upload-panel .subtitle {
@@ -155,7 +160,7 @@ body {
   position: relative;
 }
 .drop-zone:hover { border-color: var(--navy-mid); background: var(--navy-light); }
-.drop-zone.drag { border-color: var(--gold); background: var(--gold-light); }
+.drop-zone.drag { border-color: var(--navy); background: var(--navy-light); }
 .drop-zone.loaded {
   border-style: solid;
   border-color: var(--green);
@@ -193,7 +198,7 @@ body {
   border-radius: 20px;
   margin-bottom: 10px;
 }
-.tag-ext { background: rgba(0,40,85,.1); color: var(--navy); }
+.tag-ext { background: rgba(0,87,147,.1); color: var(--navy); }
 .tag-circ { background: rgba(201,151,0,.15); color: var(--amber); }
 
 .btn-procesar {
@@ -253,7 +258,7 @@ body {
 .section-title {
   font-family: 'Playfair Display', serif;
   font-size: 18px;
-  color: var(--navy);
+  color: var(--rojo);
   margin-bottom: 16px;
   display: flex;
   align-items: center;
@@ -277,7 +282,7 @@ body {
 @media(max-width:500px){.cards-grid{grid-template-columns:1fr;}}
 
 .card {
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius);
   padding: 20px 20px 16px;
   box-shadow: var(--shadow-sm);
@@ -285,24 +290,52 @@ body {
   border-top: 3px solid transparent;
   position: relative;
   overflow: hidden;
+  transition: transform .22s cubic-bezier(.2,.8,.3,1), box-shadow .22s ease;
+  animation: cardIn .5s cubic-bezier(.2,.8,.3,1) backwards;
+}
+.card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+.cards-grid .card:nth-child(2) { animation-delay: .04s; }
+.cards-grid .card:nth-child(3) { animation-delay: .08s; }
+.cards-grid .card:nth-child(4) { animation-delay: .12s; }
+.cards-grid .card:nth-child(5) { animation-delay: .16s; }
+.cards-grid .card:nth-child(6) { animation-delay: .20s; }
+.cards-grid .card:nth-child(7) { animation-delay: .24s; }
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(10px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 .card::after {
   content: '';
   position: absolute;
   top: 0; right: 0;
-  width: 80px; height: 80px;
+  width: 90px; height: 90px;
   border-radius: 50%;
-  opacity: .06;
-  background: currentColor;
+  opacity: .08;
+  background: radial-gradient(circle, currentColor 0%, currentColor 60%, transparent 100%);
   transform: translate(30px,-30px);
+  transition: transform .3s ease, opacity .3s ease;
 }
+.card:hover::after { transform: translate(20px,-20px) scale(1.15); opacity: .12; }
+.card.c-rojo { border-top-color: var(--rojo); color: var(--rojo); }
 .card.c-navy { border-top-color: var(--navy); color: var(--navy); }
 .card.c-green { border-top-color: var(--green); color: var(--green); }
 .card.c-red { border-top-color: var(--red); color: var(--red); }
 .card.c-gold { border-top-color: var(--gold); color: var(--gold); }
 .card.c-purple { border-top-color: #7c3aed; color: #7c3aed; }
-.card.c-blue { border-top-color: #1e40af; color: #1e40af; }
-.card .card-icon { font-size: 22px; margin-bottom: 8px; }
+.card.c-blue { border-top-color: var(--navy); color: var(--navy); }
+.card .card-icon {
+  font-size: 20px;
+  margin-bottom: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 12%, white);
+}
 .card .card-value {
   font-family: 'Playfair Display', serif;
   font-size: 34px;
@@ -316,7 +349,7 @@ body {
 
 /* ── FILTERS ── */
 .filters-bar {
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   padding: 16px 20px;
@@ -388,7 +421,7 @@ body {
 
 /* ── TABLE ── */
 .table-wrap {
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
@@ -450,7 +483,7 @@ body {
   font-weight: 700;
   white-space: nowrap;
 }
-.tipo-basica { background: rgba(0,40,85,.1); color: var(--navy); }
+.tipo-basica { background: rgba(0,87,147,.1); color: var(--navy); }
 .tipo-comp { background: rgba(108,117,125,.12); color: var(--gray); }
 
 .prestamos-cell {
@@ -480,7 +513,7 @@ body {
 .estado-noaplica { background: var(--amber-light); color: var(--amber); }
 .estado-noenc { background: var(--gray-light); color: var(--muted); }
 .estado-nocatalogo { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
-.estado-disponible { background: #eff6ff; color: #1e40af; }
+.estado-disponible { background: var(--navy-light); color: var(--navy); }
 
 .match-title {
   font-size: 12px;
@@ -514,7 +547,7 @@ body {
 .pg-btn {
   width: 32px; height: 32px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--surface);
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
@@ -537,7 +570,7 @@ body {
 @media(max-width:750px){.top-grid{grid-template-columns:1fr;}}
 
 .top-panel {
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
@@ -619,7 +652,7 @@ body {
 .btn-export:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 .btn-export.primary { background: var(--navy); color: var(--white); }
 .btn-export.primary:hover { background: var(--navy-mid); }
-.btn-export.secondary { background: var(--white); color: var(--navy); border: 1.5px solid var(--navy); }
+.btn-export.secondary { background: var(--surface); color: var(--navy); border: 1.5px solid var(--navy); }
 .btn-export.secondary:hover { background: var(--navy-light); }
 
 .export-note { font-size: 11.5px; color: var(--muted); }
@@ -635,12 +668,16 @@ body {
 @media(max-width:600px){.charts-grid{grid-template-columns:1fr;}}
 
 .chart-panel {
-  background: var(--white);
+  background: var(--surface);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
   padding: 18px 18px 14px;
+  animation: cardIn .55s cubic-bezier(.2,.8,.3,1) backwards;
+  animation-delay: .1s;
+  transition: box-shadow .22s ease;
 }
+.chart-panel:hover { box-shadow: var(--shadow); }
 .chart-title {
   font-size: 11px;
   font-weight: 700;
@@ -738,8 +775,8 @@ body {
         <input type="text" id="inputCarrera" class="filter-search" style="width:100%" placeholder="Se detecta automáticamente">
       </div>
       <div>
-        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Programa a comparar en circulación <span style="color:var(--gold);font-weight:900;">★</span></label>
-        <select id="inputPrograma" class="filter-select" style="width:100%;border-color:var(--gold);padding:6px 10px;background:var(--white);" disabled>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Programa a comparar en circulación <span style="color:var(--rojo);font-weight:900;">★</span></label>
+        <select id="inputPrograma" class="filter-select" style="width:100%;border-color:var(--navy);padding:6px 10px;background:var(--surface);" disabled>
           <option value="">— Carga primero el Excel de circulación —</option>
         </select>
         <div style="font-size:10.5px;color:var(--muted);margin-top:3px;">Se llena automáticamente al cargar el Excel de circulación</div>
@@ -765,7 +802,7 @@ body {
       <div style="grid-column: 1/-1; font-size: 11.5px; color: var(--muted); margin-bottom: -6px;">
         📊 Los totales de arriba cuentan <strong>títulos únicos</strong> (una obra citada en varias asignaturas cuenta 1 vez). El gráfico por asignatura y la tabla de detalle sí muestran cada aparición, porque cada asignatura la exige de verdad.
       </div>
-      <div class="card c-navy">
+      <div class="card c-rojo">
         <div class="card-icon">📚</div>
         <div class="card-value" id="cTotal">0</div>
         <div class="card-label">Referencias totales</div>
@@ -1645,6 +1682,24 @@ async function procesarDatos() {
 // ══════════════════════════════════════════════════════════
 // RENDER DASHBOARD
 // ══════════════════════════════════════════════════════════
+// Anima un valor numérico de 0 al valor final (soporta sufijo '%'), en vez de
+// que el número aparezca de golpe — sensación más viva sin exagerar.
+function animateCard(id, endValue, opts) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (typeof endValue !== 'number' || isNaN(endValue)) { el.textContent = endValue; return; }
+  const suffix = (opts && opts.suffix) || '';
+  const duration = 650;
+  const start = performance.now();
+  function tick(now) {
+    const p = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(endValue * eased) + suffix;
+    if (p < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
 function unicos(lista) {
   const vistos = new Set();
   return lista.filter(r => {
@@ -1671,18 +1726,18 @@ function renderDashboard(refs, circ, results) {
   const pct = verificablesU > 0 ? Math.round((conUso.length / verificablesU) * 100) : 0;
   const hasCat = results.some(r => r.estado === 'no-catalogo');
 
-  document.getElementById('cTotal').textContent = totalUnicos;
+  animateCard('cTotal', totalUnicos);
   document.getElementById('cAsig').textContent = asignaturas.length + ` asignaturas · ${results.length} referencias curriculares`;
-  document.getElementById('cConUso').textContent = pct + '%';
+  animateCard('cConUso', pct, { suffix: '%' });
   document.getElementById('cConUsoN').textContent = conUso.length + ' títulos únicos en uso';
-  document.getElementById('cSinUso').textContent = sinUso.length;
+  animateCard('cSinUso', sinUso.length);
   document.getElementById('cSinUsoSub').textContent = hasCat ? 'En catálogo, sin préstamos registrados' : 'Sin circulación detectada';
-  document.getElementById('cNoCat').textContent = hasCat ? noCatalog.length : '—';
+  if (hasCat) animateCard('cNoCat', noCatalog.length); else document.getElementById('cNoCat').textContent = '—';
   document.getElementById('cNoCatSub').textContent = hasCat
     ? 'No encontradas en el catálogo'
     : `Carga el catálogo para ver · ${totalPrestamos.toLocaleString('es-CL')} préstamos totales`;
   const articulosN = unicos(results.filter(r => r.estado === 'no-aplica')).length;
-  document.getElementById('cArticulos').textContent = articulosN;
+  animateCard('cArticulos', articulosN);
   document.getElementById('cArticulosSub').textContent = articulosN > 0
     ? 'Excluidos del % de cobertura · disponibles en línea'
     : 'No se detectaron artículos en esta bibliografía';
@@ -1692,7 +1747,7 @@ function renderDashboard(refs, circ, results) {
   if (hasCat && verificablesU > 0) {
     const enCatalogo = verificablesU - noCatalog.length;
     const pctCobertura = Math.round((enCatalogo / verificablesU) * 100);
-    document.getElementById('cCobertura').textContent = pctCobertura + '%';
+    animateCard('cCobertura', pctCobertura, { suffix: '%' });
     document.getElementById('cCoberturaSub').textContent = `${enCatalogo} de ${verificablesU} títulos únicos están en la colección`;
   } else {
     document.getElementById('cCobertura').textContent = '—';
@@ -1802,9 +1857,11 @@ function renderCharts(results) {
   const sinUso   = unicos(results.filter(r => r.estado === 'sin-uso')).length;
   const noAplica = unicos(results.filter(r => r.estado === 'no-aplica')).length;
 
-  const gold  = '#C99700';
-  const green = '#1a7a4a';
-  const red   = '#b02a37';
+  const gold  = '#b8860b';
+  const green = '#1a8a5a';
+  const red   = '#9d2c28';
+  const teal  = '#005793';
+  const violet = '#7c3aed';
 
   // ── Donut: cobertura global (títulos únicos) ──────────────────────────
   if (chartDonut) chartDonut.destroy();
@@ -1821,14 +1878,16 @@ function renderCharts(results) {
         data: hasCatChart
           ? [conUso, sinUsoCount, noCatCount, noAplica]
           : [conUso, sinUso, noAplica],
-        backgroundColor: hasCatChart ? [green, '#1e40af', red, gold] : [green, red, gold],
-        borderWidth: 2,
+        backgroundColor: hasCatChart ? [green, teal, red, violet] : [green, red, violet],
+        hoverOffset: 10,
+        borderWidth: 3,
         borderColor: '#fff'
       }]
     },
     options: {
       responsive: true,
       cutout: '62%',
+      animation: { animateRotate: true, animateScale: true, duration: 800, easing: 'easeOutQuart' },
       plugins: {
         legend: {
           position: 'bottom',
@@ -1912,15 +1971,16 @@ function renderCharts(results) {
     data: {
       labels: asigLabels,
       datasets: [
-        { label: 'Con circulación', data: asigConUso, backgroundColor: green,    borderRadius: 0, borderSkipped: false },
-        { label: 'Sin circulación', data: asigSinUso, backgroundColor: '#93c5fd', borderRadius: 0, borderSkipped: false },
-        ...(hayNoCatalogo ? [{ label: 'No en catálogo', data: asigNoCat, backgroundColor: '#b02a37', borderRadius: 0, borderSkipped: false }] : [])
+        { label: 'Con circulación', data: asigConUso, backgroundColor: green, borderRadius: 3, borderSkipped: false },
+        { label: 'Sin circulación', data: asigSinUso, backgroundColor: teal,  borderRadius: 3, borderSkipped: false },
+        ...(hayNoCatalogo ? [{ label: 'No en catálogo', data: asigNoCat, backgroundColor: red, borderRadius: 3, borderSkipped: false }] : [])
       ]
     },
     options: {
       responsive:          true,
       maintainAspectRatio: false,
       indexAxis: 'y',
+      animation: { duration: 700, easing: 'easeOutQuart' },
       scales: {
         x: { stacked: true, min: 0, max: 100, ticks: { callback: v => v+'%', font: { family: 'DM Mono', size: 10 } }, grid: { color: '#f0f2f5' } },
         y: { stacked: true, ticks: { font: { family: 'DM Sans', size: 11 } } }
