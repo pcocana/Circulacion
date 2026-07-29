@@ -2284,6 +2284,24 @@ function marcarDisponibleManual(id, marcado) {
   aplicarFiltros();
 }
 
+// Reclasifica manualmente una referencia como artículo/ponencia/recurso web —
+// para casos donde el detector automático la dejó como libro físico (ej. un
+// artículo con DOI pero sin patrón de volumen/número reconocible) y por lo
+// tanto se estaba comparando erróneamente contra el catálogo.
+function marcarComoArticuloManual(id, marcado) {
+  const r = allResults.find(x => x._id === id);
+  if (!r) return;
+  if (marcado) {
+    r._manualArticulo = true;
+    r.estado = 'no-aplica';
+  } else {
+    r._manualArticulo = false;
+    r.estado = r.estadoOriginal;
+  }
+  if (ultimoRefs && ultimoCirc) renderDashboard(ultimoRefs, ultimoCirc, allResults);
+  aplicarFiltros();
+}
+
 function renderTabla() {
   const tbody = document.getElementById('tableBody');
   // En modo impresión se muestran TODAS las filas filtradas, no solo la página
@@ -2315,7 +2333,8 @@ function renderTabla() {
     else if (r.estado==='no-catalogo') estadoBadge = '<span class="estado-badge estado-nocatalogo">❌ No en catálogo</span>';
     else if (r.estado==='no-aplica') {
       const etiquetasNoAplica = { articulo: '— Artículo', ponencia: '— Ponencia/Congreso', web: '— Recurso web' };
-      estadoBadge = `<span class="estado-badge estado-noaplica">${etiquetasNoAplica[r.parsed?.tipoNoAplica] || '— Artículo'}</span>`;
+      const etiqueta = etiquetasNoAplica[r.parsed?.tipoNoAplica] || '— Artículo';
+      estadoBadge = `<span class="estado-badge estado-noaplica">${etiqueta}${r._manualArticulo ? ' <span style="font-size:9px;opacity:.75;">(revisión manual)</span>' : ''}</span>`;
     }
     else estadoBadge = '<span class="estado-badge estado-noenc">? No verificado</span>';
 
@@ -2331,6 +2350,23 @@ function renderTabla() {
         : `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:3px;">
              <input type="checkbox" onchange="marcarDisponibleManual(${r._id}, this.checked)" style="cursor:pointer;">
              sí está (revisión manual)
+           </label>`;
+    }
+
+    // Selector de revisión manual: para cualquier referencia que el detector automático
+    // clasificó como libro físico pero que en realidad es un artículo/ponencia/recurso
+    // web (ej. trae DOI o revista pero sin patrón de volumen/número reconocible) —
+    // permite excluirla del cruce con el catálogo sin tener que reprocesar todo.
+    let articuloCell = '';
+    if (r.estado !== 'no-aplica') {
+      articuloCell = `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:3px;">
+             <input type="checkbox" onchange="marcarComoArticuloManual(${r._id}, this.checked)" style="cursor:pointer;">
+             es artículo/ponencia/web (no aplica)
+           </label>`;
+    } else if (r._manualArticulo) {
+      articuloCell = `<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--muted);cursor:pointer;margin-top:3px;">
+             <input type="checkbox" checked onchange="marcarComoArticuloManual(${r._id}, this.checked)" style="cursor:pointer;">
+             marcado como artículo (revertir)
            </label>`;
     }
 
@@ -2375,7 +2411,7 @@ function renderTabla() {
       <td class="ref-text"><div class="ref-truncated" title="${r.ref.replace(/<[^>]*>/g,'').replace(/"/g,'&quot;')}">${refDisplay}</div></td>
       ${matchCell}
       ${prestamosCell}
-      <td>${estadoBadge}${manualCell}</td>
+      <td>${estadoBadge}${manualCell}${articuloCell}</td>
     </tr>`;
   }).join('');
 
