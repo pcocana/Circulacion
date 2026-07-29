@@ -775,6 +775,13 @@ body {
         <input type="text" id="inputCarrera" class="filter-search" style="width:100%" placeholder="Se detecta automáticamente">
       </div>
       <div>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Filtrar bibliografía por Programa <span style="color:var(--rojo);font-weight:900;">★</span></label>
+        <select id="inputProgramaBib" class="filter-select" style="width:100%;border-color:var(--navy);padding:6px 10px;background:var(--surface);" disabled>
+          <option value="">— Carga primero la bibliografía —</option>
+        </select>
+        <div style="font-size:10.5px;color:var(--muted);margin-top:3px;" id="programaBibHint">Solo aplica si el Excel del Extractor trae columna "Programa/Carrera" (ej. tabla maestra con varios programas)</div>
+      </div>
+      <div>
         <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Programa a comparar en circulación <span style="color:var(--rojo);font-weight:900;">★</span></label>
         <select id="inputPrograma" class="filter-select" style="width:100%;border-color:var(--navy);padding:6px 10px;background:var(--surface);" disabled>
           <option value="">— Carga primero el Excel de circulación —</option>
@@ -936,7 +943,20 @@ body {
 // ESTADO GLOBAL
 // ══════════════════════════════════════════════════════════
 let rawExt = null, rawCirc = null, rawCat = null;
+
+// Elige la hoja correcta dentro de un .xlsx con varias pestañas (ej. el kit de la
+// tabla maestra, que trae en un mismo archivo "Tabla Maestra" + hojas de catálogo).
+// Si ninguna pestaña calza con los nombres esperados, cae de vuelta a la primera hoja.
+function pickSheet(wb, nameKeywords) {
+  const norms = wb.SheetNames.map(n => String(n).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
+  for (const kw of nameKeywords) {
+    const idx = norms.findIndex(n => n.includes(kw));
+    if (idx !== -1) return wb.Sheets[wb.SheetNames[idx]];
+  }
+  return wb.Sheets[wb.SheetNames[0]];
+}
 let allResults = [], filtered = [];
+let catalogoCargado = false;
 let ultimoRefs = null, ultimoCirc = null; // se guardan para poder re-renderizar tras un ajuste manual
 let sortKey = 'prestamos', sortDir = -1;
 let filterTipo = '', filterEstado = '', currentPage = 0, programaActivo = '';
@@ -968,7 +988,7 @@ function handleFile(tipo, file) {
       document.getElementById('dzExt').classList.add('loaded');
       document.getElementById('fnExt').textContent = file.name;
       // Intentar detectar carrera
-      const ws = wb.Sheets[wb.SheetNames[0]];
+      const ws = pickSheet(wb, ['tabla maestra', 'bibliografia', 'extractor']);
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
       if (rows[0] && rows[0][0]) {
         const m = String(rows[0][0]).match(/Carrera[^:]*:\s*(.+)/i);
@@ -976,6 +996,8 @@ function handleFile(tipo, file) {
           document.getElementById('inputCarrera').value = m[1].trim();
         }
       }
+      // Poblar dropdown de programas de la BIBLIOGRAFÍA (distinto del programa de circulación)
+      poblarSelectProgramaBib(wb);
     } else if (tipo === 'circ') {
       rawCirc = wb;
       document.getElementById('dzCirc').classList.add('loaded');
@@ -1000,6 +1022,9 @@ function clearFile(tipo) {
     document.getElementById('dzExt').classList.remove('loaded');
     document.getElementById('fnExt').textContent = '';
     document.getElementById('fileExt').value = '';
+    const selBib = document.getElementById('inputProgramaBib');
+    selBib.innerHTML = '<option value="">— Carga primero la bibliografía —</option>';
+    selBib.disabled = true;
   } else if (tipo === 'circ') {
     rawCirc = null;
     document.getElementById('dzCirc').classList.remove('loaded');
@@ -1022,7 +1047,7 @@ function checkReady() {
 }
 
 function detectarRangoAnios(wb) {
-  const ws = wb.Sheets[wb.SheetNames[0]];
+  const ws = pickSheet(wb, ['circulacion', 'prestamo', 'movimiento']);
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   const hintEl = document.getElementById('anioRangoHint');
 
@@ -1056,8 +1081,53 @@ function detectarRangoAnios(wb) {
   }
 }
 
+function poblarSelectProgramaBib(wb) {
+  const ws = pickSheet(wb, ['tabla maestra', 'bibliografia', 'extractor']);
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const sel = document.getElementById('inputProgramaBib');
+  const hint = document.getElementById('programaBibHint');
+
+  let headerRow = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const r = rows[i].map(c2 => norm(String(c2)));
+    if (r.some(c2 => c2.includes('referencia') || c2.includes('bibliograf') || c2.includes('asignatura'))) { headerRow = i; break; }
+  }
+  if (headerRow === -1) headerRow = 1;
+
+  const headers = rows[headerRow].map(c2 => norm(String(c2)));
+  const iPrograma = headers.findIndex(h => h.includes('programa') || h.includes('carrera'));
+
+  if (iPrograma === -1) {
+    sel.innerHTML = '<option value="">— Este archivo no trae columna Programa/Carrera —</option>';
+    sel.disabled = true;
+    if (hint) hint.textContent = 'No se detectó columna "Programa/Carrera" — se analizarán todas las filas del archivo cargado';
+    return;
+  }
+
+  // Recolectar programas únicos (con arrastre, igual que en parsearExtractor)
+  const programas = new Map();
+  let last = '';
+  for (let i = headerRow + 1; i < rows.length; i++) {
+    const v = String(rows[i][iPrograma] || '').trim() || last;
+    if (v) { last = v; programas.set(v, (programas.get(v) || 0) + 1); }
+  }
+  const ordenadas = [...programas.entries()].sort((a, b) => b[1] - a[1]);
+
+  sel.innerHTML = '<option value="">— Todos los programas de la tabla —</option>';
+  ordenadas.forEach(([nombre, n]) => {
+    const opt = document.createElement('option');
+    opt.value = nombre;
+    opt.textContent = `${nombre}  (${n.toLocaleString()} referencias)`;
+    sel.appendChild(opt);
+  });
+  sel.disabled = false;
+  if (hint) hint.textContent = ordenadas.length > 1
+    ? `Se detectaron ${ordenadas.length} programas en este archivo — elegí uno para analizar solo su bibliografía`
+    : 'Solo se detectó un programa en este archivo';
+}
+
 function poblarSelectPrograma(wb) {
-  const ws = wb.Sheets[wb.SheetNames[0]];
+  const ws = pickSheet(wb, ['circulacion', 'prestamo', 'movimiento']);
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
   // Encontrar columna Carrera
@@ -1120,13 +1190,39 @@ function keywords(text) {
   return norm(text).split(' ').filter(w => w.length > 3 && !STOP.has(w));
 }
 
+// Marcador de "editor(es)" mucho más permisivo: acepta "ed", "ed.", "eds", "eds.",
+// y también la variante "Ed.s" (punto antes de la s) que aparece en algunas citas.
+const EDMARK = 'e\\.?d\\.?s?\\.?|comp\\.?|coord\\.?|editor';
+
+// Recorte de editorial/edición al final de un título, dividido en dos reglas:
+// - CORTE_EDICION: palabras clave de edición/editorial — case-insensitive, bajo riesgo.
+// - CORTE_LUGAR: patrón "Palabra:" tipo "Ciudad: Editorial" — a propósito NO
+//   case-insensitive (exige mayúscula real), porque con /i cualquier palabra en
+//   minúscula seguida de dos puntos dentro de un subtítulo normal ("... teachers'
+//   specialized knowledge: a secondary...") se cortaba por error.
+const CORTE_EDICION = /\b(?:\d+\S{0,4}\.?\s*(?:ed\.?\b|edici[oó]n)|edici[oó]n|editorial\b|ediciones\b|colecci[oó]n\b)\b/i;
+const CORTE_LUGAR    = /[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s*:\s/;
+
+function cortarEnEditorial(texto) {
+  const m1 = texto.match(CORTE_EDICION);
+  const m2 = texto.match(CORTE_LUGAR);
+  let best = null;
+  if (m1) best = m1;
+  if (m2 && (!best || m2.index < best.index)) best = m2;
+  return (best ? texto.slice(0, best.index) : texto).replace(/[,;\s]+$/, '');
+}
+
 function parseRef(ref) {
   const s = String(ref || '').trim();
 
   // Detectar artículos, ponencias/congresos y recursos web → no aplica para circulación física
   // Señal fuerte de capítulo dentro de un libro editado -> NO cuenta como artículo
-  // (formato "En/In [Editor(es)] (Ed./Eds.), Título del libro (pp. X-Y)")
-  const esCapituloLibro = /\b(en|in)\s+[^(]{0,100}\((?:ed\.?s?|eds\.?|comp\.?|coord\.?|editor)/i.test(s);
+  // (formato "En/In [Editor(es)] (Ed./Eds.), Título del libro (pp. X-Y)").
+  // Se exige la COMA final ("(Eds.), Título") para no confundir con casos donde
+  // la palabra "en"/"in" aparece dentro del propio título (ej. "Lesson Study
+  // in Initial Teacher Education... P. Wood (Ed.). Editorial." — sin coma tras
+  // el editor, así que ya no dispara falsamente el modo "capítulo").
+  const esCapituloLibro = new RegExp(`\\b(en|in)\\s+[^(]{0,100}\\(\\s*(?:${EDMARK})\\s*\\)\\s*,`, 'i').test(s);
 
   let isArticle = false, tipoNoAplica = null;
   if (!esCapituloLibro) {
@@ -1135,24 +1231,29 @@ function parseRef(ref) {
     const tieneVolNumParen = /,\s*\d{1,4}\s*\(\d{1,4}\)\s*,\s*\d/.test(s);
     const tieneVolNumComa  = /,\s*\d{1,4}\s*,\s*\d{1,4}\s*,\s*\d{1,4}[\u2013\-]\d{1,4}/.test(s);
     const tieneKeywordRevista = /\b(journal|revista|issn|transactions|proceedings|quarterly)\b/i.test(s);
-    // DOI: señal casi inequívoca de artículo de revista (los libros casi nunca lo llevan así citado)
+    // El DOI por sí solo YA NO basta como señal de artículo: muchos libros y
+    // capítulos actuales (Springer, Elsevier, editoriales universitarias) también
+    // llevan DOI propio. Solo cuenta si además hay patrón de volumen/número.
     const tieneDOI = /\bdoi\s*:?\s*10\.\d{4,9}\//i.test(s) || /\bdx\.doi\.org\/10\.\d{4,9}\//i.test(s) || /\bhttps?:\/\/doi\.org\/10\.\d{4,9}\//i.test(s);
-    if (tieneVolNumParen || tieneVolNumComa || tieneKeywordRevista || tieneDOI) {
+    if (tieneVolNumParen || tieneVolNumComa || tieneKeywordRevista || (tieneDOI && (tieneVolNumParen || tieneVolNumComa))) {
       isArticle = true; tipoNoAplica = 'articulo';
     } else if (/\b(presentado en|ponencia|colloque|coloquio|congreso|symposium|conference)\b/i.test(s)) {
       // Ponencia o presentación en congreso — no es un libro físico catalogable
       isArticle = true; tipoNoAplica = 'ponencia';
-    } else if (/\b(disponible|recuperado)\b[^:]{0,50}:?\s*https?:\/\//i.test(s) || /https?:\/\//i.test(s)) {
-      // Recurso web: cualquier variante de "Disponible en/desde/sobre el sitio...: http(s)://"
-      // o, en última instancia, cualquier cita que traiga una URL cruda — casi nunca es un
-      // libro físico catalogable si trae un link directo al recurso.
-      isArticle = true; tipoNoAplica = 'web';
+    } else {
+      // Recurso web: "Disponible en/desde: http(s)://" o cualquier URL cruda —
+      // pero un DOI puro ya no cuenta para este chequeo (ver nota arriba).
+      const sinDoi = s.replace(/https?:\/\/(dx\.)?doi\.org\/\S+/gi, '').replace(/\bdoi\s*:?\s*10\.\d{4,9}\/\S+/gi, '');
+      if (/\b(disponible|recuperado)\b[^:]{0,50}:?\s*https?:\/\//i.test(sinDoi) || /https?:\/\//i.test(sinDoi)) {
+        isArticle = true; tipoNoAplica = 'web';
+      }
     }
   }
 
-  // Extraer apellido(s) del autor: primer token tipo "Apellido,"
+  // Extraer apellido(s) del autor: primer token tipo "Apellido,". Ahora tolera
+  // apóstrofos internos (D'Angelo, D'Amore, O'Brien...).
   let lastName = '';
-  const authorM = s.match(/^([A-ZÁÉÍÓÚÑÜÀ][a-záéíóúñüà\-]{2,}(?:,\s*[A-ZÁÉÍÓÚÑ][\w\.]*)?)/);
+  const authorM = s.match(/^([A-ZÁÉÍÓÚÑÜÀ][a-záéíóúñüà'’\-]{1,}(?:,\s*[A-ZÁÉÍÓÚÑ][\w\.]*)?)/);
   if (authorM) lastName = norm(authorM[1].split(',')[0]);
 
   // Extraer título: para capítulos de libro, el título que hay que buscar en el
@@ -1160,23 +1261,32 @@ function parseRef(ref) {
   // — el capítulo no es un ítem catalogable por separado.
   let titleRaw = '';
   if (esCapituloLibro) {
-    const libroM = s.match(/\((?:eds?\.?|comp\.?|coord\.?|editor)\.?\)\s*,?\s*([^(]{5,150}?)\s*(?:\(pp\.|\.\s|\.$|$)/i);
+    const libroM = s.match(new RegExp(`\\(\\s*(?:${EDMARK})\\s*\\)\\s*,?\\s*([^(]{5,150}?)\\s*(?:\\(pp\\.|\\.\\s|\\.$|$)`, 'i'));
     if (libroM) titleRaw = libroM[1].trim();
   }
 
-  // Extraer año
-  const yearM = s.match(/\((\d{4})\)/);
+  // Extraer año: admite "(1986)" simple y también rango "(1970-1990)" (se usa el
+  // año final del rango), útil en citas de obras reeditadas o de largo desarrollo.
+  let yearM = s.match(/\((\d{4})\)/);
+  if (!yearM) {
+    const rangeM = s.match(/\((\d{4})\s*[-\u2013]\s*(\d{4})\)/);
+    if (rangeM) yearM = { 0: rangeM[0], 1: rangeM[2], index: rangeM.index };
+  }
   let year = yearM ? yearM[1] : '';
 
   // Soporta <i>...</i> y texto plano (solo si no se extrajo ya el título del libro contenedor)
   if (!titleRaw) {
   if (yearM) {
-    const italicM = s.match(/\(\d{4}\)[.)]\s*<i>([^<]+)<\/i>/i);
+    // A partir de aquí se busca en el texto que sigue al año. Se tolera un
+    // paréntesis adicional entre el año y la puntuación (ej. "(2013) (Eds.).
+    // Título..." o "(2018) (2ª ed.). Título..."), que antes rompía la extracción.
+    const yearTail = s.slice(yearM.index + yearM[0].length);
+    const italicM = yearTail.match(/^\s*(?:\([^)]{1,20}\)\s*)?[.,)]\s*<i>([^<]+)<\/i>/i);
     if (italicM) {
       titleRaw = italicM[1];
     } else {
-      const plainM = s.match(/\(\d{4}\)[.)]\s*([^.]{8,})/);
-      if (plainM) titleRaw = plainM[1];
+      const plainM = yearTail.match(/^\s*(?:\([^)]{1,20}\)\s*)?[.,)]\s*([^.]{8,})/);
+      if (plainM) titleRaw = cortarEnEditorial(plainM[1]);
     }
   } else {
     // FALLBACK: año simple al final, sin paréntesis (bibliografía de matemática / estilo AMS,
@@ -1188,16 +1298,32 @@ function parseRef(ref) {
       if (authorM) resto = resto.slice(authorM[0].length);
       resto = resto.replace(/^[,;\s]+/, '');
       // Cortar en el primer indicio de edición, editorial o lugar de publicación
-      const corteRe = /\b(?:\d+\S{0,4}\.?\s*(?:ed\.?\b|edici[oó]n)|edici[oó]n|editorial\b|ediciones\b|colecci[oó]n\b|[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s*:\s)/i;
-      const corteM = resto.match(corteRe);
-      titleRaw = corteM ? resto.slice(0, corteM.index) : resto;
-      titleRaw = titleRaw.replace(/[,;\s]+$/, '');
+      titleRaw = cortarEnEditorial(resto);
     }
   }
   }
 
   const kws = keywords(titleRaw || s);
   return { lastName, year, keywords: kws, titleRaw, isArticle, tipoNoAplica };
+}
+
+// Similitud por bigramas (coeficiente de Dice): más tolerante que comparar solo
+// prefijos ante variaciones de género/número típicas del español (ej.
+// "matemática"~"matemáticas", "profesor"~"profesores"), sin llegar a confundir
+// palabras distintas ("didáctica" vs "pedagogía" da una similitud muy baja).
+function bigramas(w) {
+  if (w.length < 2) return new Set([w]);
+  const s = new Set();
+  for (let i = 0; i < w.length - 1; i++) s.add(w.slice(i, i + 2));
+  return s;
+}
+function simBigrama(a, b) {
+  if (a === b) return 1;
+  const A = bigramas(a), B = bigramas(b);
+  let inter = 0;
+  A.forEach(x => { if (B.has(x)) inter++; });
+  const union = A.size + B.size - inter;
+  return union > 0 ? inter / union : 0;
 }
 
 function matchScore(parsed, circItem) {
@@ -1219,7 +1345,7 @@ function matchScore(parsed, circItem) {
 
   let matched = 0;
   for (const k of parsed.keywords) {
-    if (titleKws.some(tw => tw === k || (tw.length > 4 && k.length > 4 && (tw.startsWith(k.slice(0,5)) || k.startsWith(tw.slice(0,5)))))) matched++;
+    if (titleKws.some(tw => tw === k || (tw.length > 4 && k.length > 4 && simBigrama(tw, k) >= 0.6))) matched++;
   }
   const recall = matched / parsed.keywords.length;
   const precision = matched / titleKws.length;
@@ -1264,7 +1390,7 @@ function mismaObra(p1, p2) {
 // PARSEAR EXCELS
 // ══════════════════════════════════════════════════════════
 function parsearExtractor(wb) {
-  const ws = wb.Sheets[wb.SheetNames[0]];
+  const ws = pickSheet(wb, ['tabla maestra', 'bibliografia', 'extractor']);
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
   let headerRow = -1;
@@ -1281,33 +1407,45 @@ function parsearExtractor(wb) {
   const iAsig  = headers.findIndex((h, idx) => idx !== iClave && (h.includes('asignatura') || h.includes('curso') || h.includes('materia')));
   const iTipo  = headers.findIndex(h => h.includes('tipo') || h.includes('bibliog'));
   const iRef   = headers.findIndex(h => h.includes('referencia') || h.includes('ref'));
+  // Programa/Carrera: solo relevante en tablas maestras que cruzan varios programas a la vez
+  // (ej. las 7 mallas de posgrado del IMA en un mismo archivo).
+  const iPrograma = headers.findIndex(h => h.includes('programa') || h.includes('carrera'));
+  // Biblionumber/ID Koha ya confirmado por el cruce bigrama de la tabla maestra:
+  // si viene, es un join exacto y evita depender del matching fuzzy por título.
+  // OJO: no confundir con "Sugerencia Automática - ID Registro" (solo un candidato,
+  // no confirmado) — por eso se exige la palabra "biblionumber" o "id koha" textual.
+  const iBiblio = headers.findIndex(h => h.includes('biblionumber') || h.includes('id koha'));
 
   const refs = [];
-  let lastClave = '', lastAsig = '', lastTipo = 'Básica';
+  let lastClave = '', lastAsig = '', lastTipo = 'Básica', lastPrograma = '';
 
   for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i];
-    const clave = String(r[iClave] || '').trim() || lastClave;
-    const asig  = String(r[iAsig !== -1 ? iAsig : -1] || '').trim() || lastAsig;
-    const tipo  = String(r[iTipo] || '').trim() || lastTipo;
-    const ref   = String(r[iRef !== -1 ? iRef : r.length - 1] || '').trim();
+    const clave        = String(r[iClave] || '').trim() || lastClave;
+    const asig         = String(r[iAsig !== -1 ? iAsig : -1] || '').trim() || lastAsig;
+    const tipo         = String(r[iTipo] || '').trim() || lastTipo;
+    const programa     = String(r[iPrograma !== -1 ? iPrograma : -1] || '').trim() || lastPrograma;
+    const ref          = String(r[iRef !== -1 ? iRef : r.length - 1] || '').trim();
+    const biblionumber = iBiblio !== -1 ? String(r[iBiblio] || '').trim() : '';
 
     if (clave) lastClave = clave;
     if (asig)  lastAsig  = asig;
     if (tipo && tipo.length > 1) lastTipo = tipo;
+    if (programa) lastPrograma = programa;
 
     if (ref && ref.length > 15)
-      refs.push({ clave: lastClave, asignatura: lastAsig, tipo: lastTipo, ref });
+      refs.push({ clave: lastClave, asignatura: lastAsig, tipo: lastTipo, programa: lastPrograma, ref, biblionumber });
   }
 
   // Advertencias accesibles desde procesarDatos
   refs._sinAsignatura = iAsig === -1;
   refs._sinReferencia = iRef  === -1;
+  refs._sinPrograma   = iPrograma === -1;
   return refs;
 }
 
 function parsearCirculacion(wb, anioDesde, anioHasta) {
-  const ws = wb.Sheets[wb.SheetNames[0]];
+  const ws = pickSheet(wb, ['circulacion', 'prestamo', 'movimiento']);
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
   let headerRow = 0;
@@ -1380,12 +1518,15 @@ function parsearCirculacion(wb, anioDesde, anioHasta) {
 }
 
 function parsearCatalogo(wb) {
-  const ws = wb.Sheets[wb.SheetNames[0]];
+  // Si el archivo trae varias pestañas (ej. el kit de tabla maestra con hojas de
+  // catálogo incluidas), preferir la hoja "por registro" — un catálogo agregado
+  // por Biblionumber, ideal para el join exacto de más abajo.
+  const ws = pickSheet(wb, ['por registro', 'catalogo']);
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   let headerRow = 0;
   for (let i = 0; i < Math.min(rows.length, 6); i++) {
     const r = rows[i].map(c2 => norm(String(c2)));
-    if (r.some(h => h.includes('titulo') || h.includes('titu') || h.includes('signatura') || h.includes('inventario') || h.includes('barcode'))) {
+    if (r.some(h => h.includes('titulo') || h.includes('titu') || h.includes('signatura') || h.includes('inventario') || h.includes('barcode') || h.includes('biblionumber'))) {
       headerRow = i; break;
     }
   }
@@ -1404,19 +1545,28 @@ function parsearCatalogo(wb) {
     h.includes('codigo barra')   || h.includes('codigobarra') ||
     (h.includes('inventario') && !h.includes('prestamo'))
   );
+  // Biblionumber / ID de registro Koha: join exacto y más confiable que el fuzzy
+  // por título — esto es lo que ya trae confirmado la tabla maestra cruzada.
+  const iBiblio = headers.findIndex(h =>
+    h.includes('biblionumber') ||
+    (h.includes('identificador') && h.includes('registro')) ||
+    h === 'id registro' || h.includes('id de registro')
+  );
 
   const items = [];
   for (let i = headerRow + 1; i < rows.length; i++) {
     const r = rows[i];
     const titulo = String(r[iTitulo !== -1 ? iTitulo : 0] || '').trim();
-    if (!titulo || titulo.length < 3) continue;
+    const biblionumber = iBiblio !== -1 ? String(r[iBiblio] || '').trim() : '';
+    if ((!titulo || titulo.length < 3) && !biblionumber) continue;
     items.push({
-      titulo,
+      titulo:            titulo || '(sin título)',
       autor:             String(r[iAutor  !== -1 ? iAutor  : 1] || '').trim(),
       signatura:         String(r[iSignat !== -1 ? iSignat : 2] || '').trim(),
       anio:              String(r[iAnio   !== -1 ? iAnio   : 3] || '').trim(),
       ejemplares:        parseInt(r[iEjemp !== -1 ? iEjemp : -1]) || 1,
-      numero_inventario: iInventario !== -1 ? String(r[iInventario] || '').trim() : ''
+      numero_inventario: iInventario !== -1 ? String(r[iInventario] || '').trim() : '',
+      biblionumber
     });
   }
   return items;
@@ -1470,7 +1620,17 @@ async function procesarDatos() {
   try {
     addLog('▸ Leyendo Excel del Extractor Masivo...');
     await new Promise(r => setTimeout(r, 30));
-    const refs = parsearExtractor(rawExt);
+    let refs = parsearExtractor(rawExt);
+    const programaBibSel = document.getElementById('inputProgramaBib').value.trim();
+    if (programaBibSel) {
+      const totalAntes = refs.length;
+      const _sinAsignaturaPrev = refs._sinAsignatura, _sinReferenciaPrev = refs._sinReferencia, _sinProgramaPrev = refs._sinPrograma;
+      refs = refs.filter(r => r.programa === programaBibSel);
+      refs._sinAsignatura = _sinAsignaturaPrev; refs._sinReferencia = _sinReferenciaPrev; refs._sinPrograma = _sinProgramaPrev;
+      addLog(`  🎯 Filtrado por programa "${programaBibSel}": ${refs.length}/${totalAntes} referencias de bibliografía`);
+    } else if (!refs._sinPrograma) {
+      addLog('  ℹ Tabla con varios programas detectada, sin filtro elegido — se analizarán TODOS los programas juntos', 'warn');
+    }
     const asigCount = new Set(refs.map(r => r.asignatura).filter(Boolean)).size;
     addLog(`  ✓ ${refs.length} referencias en ${asigCount} asignatura${asigCount !== 1 ? 's' : ''}`);
     if (refs._sinAsignatura)
@@ -1498,6 +1658,7 @@ async function procesarDatos() {
 
     let cat = null;
     let joinInfo = { activo: false };
+    catalogoCargado = !!rawCat;
     if (rawCat) {
       addLog('▸ Leyendo Catálogo KOHA...');
       await new Promise(r => setTimeout(r, 30));
@@ -1514,6 +1675,19 @@ async function procesarDatos() {
       }
     } else {
       addLog('  ℹ Sin catálogo cargado — solo se usará circulación para el análisis');
+    }
+
+    // Mapa Biblionumber → ítem de catálogo, para join exacto cuando la bibliografía
+    // (tabla maestra) ya trae el ID Koha confirmado por el cruce bigrama — evita
+    // depender del matching fuzzy por título en esos casos.
+    let catPorBiblio = null;
+    if (cat) {
+      catPorBiblio = new Map();
+      cat.forEach(item => { if (item.biblionumber) catPorBiblio.set(item.biblionumber, item); });
+      const refsConBiblio = refs.filter(r => r.biblionumber).length;
+      if (refsConBiblio > 0) {
+        addLog(`  🔗 ${refsConBiblio} referencias traen Biblionumber confirmado en la tabla maestra — se usará join exacto`);
+      }
     }
 
     const programaInput = document.getElementById('inputPrograma').value.trim();
@@ -1551,9 +1725,16 @@ async function procesarDatos() {
         continue;
       }
 
-      // Step 1: match against catalog (if available)
-      let catScore = 0, catItem = null;
-      if (cat) {
+      // Step 0: join exacto por Biblionumber (si la tabla maestra ya lo trae confirmado)
+      let catScore = 0, catItem = null, _joinBiblio = false;
+      if (catPorBiblio && ref.biblionumber && catPorBiblio.has(ref.biblionumber)) {
+        catItem = catPorBiblio.get(ref.biblionumber);
+        catScore = 100;
+        _joinBiblio = true;
+      }
+
+      // Step 1: match against catalog (if available) — solo si no hubo join exacto
+      if (!_joinBiblio && cat) {
         for (const item of cat) {
           const { score } = matchScore(parsed, item);
           if (score > catScore) { catScore = score; catItem = item; }
@@ -1619,7 +1800,7 @@ async function procesarDatos() {
 
       // prestamosPrograma = mismo que prestamos cuando hay programa definido
       const prestamosTotal = matchItem ? matchItem.prestamos : 0;
-      allResults.push({ ...ref, parsed, matchItem, catItem: catItem||null, prestamos, prestamosTotal, score, estado, estadoOriginal: estado, _joinInventario });
+      allResults.push({ ...ref, parsed, matchItem, catItem: catItem||null, prestamos, prestamosTotal, score, estado, estadoOriginal: estado, _joinInventario, _joinBiblio });
     }
 
     allResults.forEach((r, i) => { r._id = i; });
@@ -1724,7 +1905,10 @@ function renderDashboard(refs, circ, results) {
   const totalUnicos = unicos(results).length;
   const verificablesU = unicos(results.filter(r => r.estado !== 'no-aplica')).length;
   const pct = verificablesU > 0 ? Math.round((conUso.length / verificablesU) * 100) : 0;
-  const hasCat = results.some(r => r.estado === 'no-catalogo');
+  // OJO: hasCat indica si se cargó un archivo de Catálogo, NO si hay referencias
+  // "no en catálogo" — antes se inferían una de la otra, lo que rompía el % de
+  // Cobertura justo cuando el matching funcionaba perfecto (0 títulos sin encontrar).
+  const hasCat = catalogoCargado;
 
   animateCard('cTotal', totalUnicos);
   document.getElementById('cAsig').textContent = asignaturas.length + ` asignaturas · ${results.length} referencias curriculares`;
@@ -2128,6 +2312,8 @@ function renderTabla() {
       const inv = r.matchItem.numero_inventario;
       const joinTag = r._joinInventario
         ? `<span title="Vinculado exactamente por N° inventario" style="color:#16a34a;font-size:10px;font-weight:700;">🔗 inv. exacto</span>`
+        : r._joinBiblio
+        ? `<span title="Vinculado exactamente por Biblionumber ya confirmado en la tabla maestra" style="color:#16a34a;font-size:10px;font-weight:700;">🔗 biblio exacto</span>`
         : `<span style="color:var(--muted);font-size:10px;">score ${r.score}</span>`;
       const invTag = inv
         ? `<span style="font-family:monospace;font-size:10px;color:var(--muted);margin-left:4px;">· ${inv}</span>`
