@@ -690,7 +690,34 @@ body {
 .chart-panel-wide {
   grid-column: span 2;
 }
-@media(max-width:900px){.chart-panel-wide{grid-column:span 1;}}
+@media(max-width:900px){.chart-panel-wide{grid-column:span 1;}/* ── ENCABEZADO DE IMPRESIÓN (oculto en pantalla) ── */
+.print-header { display: none; }
+
+/* ── IMPRESIÓN / EXPORTAR A PDF ──
+   Oculta todo lo interactivo (carga de archivos, filtros, paginación, botones)
+   y deja solo el resumen ejecutivo: cards, gráficos, paneles destacados y la
+   tabla de detalle COMPLETA (sin paginar) con el estado ya revisado manualmente. */
+@media print {
+  body { background: #fff; font-size: 11px; }
+  .site-header, .upload-panel, .filters-bar, .pagination,
+  .export-bar, .status-log, .btn-procesar { display: none !important; }
+  .print-header { display: block; margin-bottom: 18px; }
+  .print-header h1 { font-family: 'Playfair Display', serif; font-size: 20px; color: var(--rojo); margin-bottom: 2px; }
+  .print-sub { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .print-meta { font-size: 11px; color: var(--text); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 6px 0; }
+  .container { max-width: 100%; padding: 0; }
+  .dashboard { display: block !important; }
+  .cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .card { box-shadow: none; border: 1px solid var(--border); break-inside: avoid; }
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; break-inside: avoid; }
+  .top-grid { break-inside: avoid; }
+  .table-wrap { overflow: visible !important; }
+  table { font-size: 9.5px; }
+  thead { display: table-header-group; } /* repite encabezados de tabla en cada página */
+  tr { break-inside: avoid; }
+  .section-title { break-after: avoid; }
+  input[type="checkbox"] { display: none; }
+}
 </style>
 </head>
 <body>
@@ -803,6 +830,13 @@ body {
 
   <!-- DASHBOARD -->
   <div class="dashboard" id="dashboard">
+
+    <!-- Encabezado de impresión: oculto en pantalla, visible solo en el PDF/impresión -->
+    <div class="print-header" id="printHeader">
+      <h1>Análisis de Circulación Bibliográfica</h1>
+      <div class="print-sub">Biblioteca · Pontificia Universidad Católica de Valparaíso</div>
+      <div class="print-meta" id="printMeta"></div>
+    </div>
 
     <!-- Summary Cards -->
     <div class="cards-grid">
@@ -932,6 +966,7 @@ body {
     <div class="export-bar">
       <button class="btn-export primary" onclick="exportarExcel()">📥 Descargar Excel completo</button>
       <button class="btn-export secondary" onclick="exportarResumen()">📋 Resumen por asignatura</button>
+      <button class="btn-export secondary" onclick="exportarPDF()">🖨️ Exportar Dashboard a PDF</button>
       <span class="export-note" id="exportNote"></span>
     </div>
 
@@ -960,6 +995,7 @@ let catalogoCargado = false;
 let ultimoRefs = null, ultimoCirc = null; // se guardan para poder re-renderizar tras un ajuste manual
 let sortKey = 'prestamos', sortDir = -1;
 let filterTipo = '', filterEstado = '', currentPage = 0, programaActivo = '';
+let modoImpresion = false;
 const PAGE_SIZE = 50;
 
 // ══════════════════════════════════════════════════════════
@@ -2250,8 +2286,10 @@ function marcarDisponibleManual(id, marcado) {
 
 function renderTabla() {
   const tbody = document.getElementById('tableBody');
-  const start = currentPage * PAGE_SIZE;
-  const page = filtered.slice(start, start + PAGE_SIZE);
+  // En modo impresión se muestran TODAS las filas filtradas, no solo la página
+  // actual — así el PDF refleja la revisión manual completa, no solo 50 filas.
+  const start = modoImpresion ? 0 : currentPage * PAGE_SIZE;
+  const page = modoImpresion ? filtered : filtered.slice(start, start + PAGE_SIZE);
 
   document.getElementById('resultsCount').textContent =
     `${filtered.length} resultado${filtered.length!==1?'s':''} de ${allResults.length}`;
@@ -2375,6 +2413,37 @@ function changePage(p) {
 // ══════════════════════════════════════════════════════════
 // EXPORT EXCEL
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+// EXPORTAR DASHBOARD A PDF (impresión del navegador)
+// No genera un archivo PDF directamente — abre el diálogo de impresión del
+// navegador con "Guardar como PDF" ya listo, mostrando SOLO el resumen
+// ejecutivo (cards, gráficos, paneles y tabla completa ya revisada), sin el
+// panel de carga de archivos ni los controles de filtro.
+// ══════════════════════════════════════════════════════════
+function prepararParaImprimir() {
+  modoImpresion = true;
+  const periodo   = document.getElementById('inputPeriodo').value || '—';
+  const carrera   = document.getElementById('inputCarrera').value || '—';
+  const programa  = document.getElementById('inputPrograma').value;
+  const fecha     = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
+  document.getElementById('printMeta').innerHTML =
+    `<strong>Carrera/Programa:</strong> ${escHtml(carrera)} &nbsp;·&nbsp; <strong>Período:</strong> ${escHtml(periodo)}` +
+    (programa ? ` &nbsp;·&nbsp; <strong>Circulación filtrada por:</strong> ${escHtml(programa)}` : '') +
+    ` &nbsp;·&nbsp; Generado el ${fecha}`;
+  renderTabla();
+}
+function restaurarDespuesDeImprimir() {
+  modoImpresion = false;
+  renderTabla();
+}
+window.addEventListener('beforeprint', prepararParaImprimir);
+window.addEventListener('afterprint', restaurarDespuesDeImprimir);
+
+function exportarPDF() {
+  if (!allResults.length) return;
+  window.print();
+}
+
 function exportarExcel() {
   const wb = XLSX.utils.book_new();
   const periodo = document.getElementById('inputPeriodo').value;
