@@ -254,6 +254,12 @@ body {
 /* ── DASHBOARD ── */
 .dashboard { display: none; }
 .dashboard.visible { display: block; }
+.dashboard-demanda { display: none; }
+.dashboard-demanda.visible { display: block; }
+/* Fuerza a ocultar el dashboard del modo inactivo, incluso durante la impresión
+   (mayor especificidad que la regla `.dashboard{display:block!important}` de
+   @media print más abajo, así que gana sin depender del orden en la hoja). */
+.dashboard.dashboard-inactivo, .dashboard-demanda.dashboard-inactivo { display: none !important; }
 
 .section-title {
   font-family: 'Playfair Display', serif;
@@ -706,7 +712,7 @@ body {
   .print-sub { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
   .print-meta { font-size: 11px; color: var(--text); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 6px 0; }
   .container { max-width: 100%; padding: 0; }
-  .dashboard { display: block !important; }
+  .dashboard, .dashboard-demanda { display: block !important; }
   .cards-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   .card { box-shadow: none; border: 1px solid var(--border); break-inside: avoid; }
   .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; break-inside: avoid; }
@@ -740,10 +746,15 @@ body {
 
   <!-- UPLOAD PANEL -->
   <div class="upload-panel" id="uploadPanel">
-    <h2>Cruce Bibliografía × Circulación KOHA</h2>
-    <p class="subtitle">Carga el Excel del Extractor Masivo y el reporte de circulación de KOHA para analizar qué referencias se están usando realmente.</p>
+    <h2 id="uploadTitle">Cruce Bibliografía × Circulación KOHA</h2>
+    <p class="subtitle" id="uploadSubtitle">Carga el Excel del Extractor Masivo y el reporte de circulación de KOHA para analizar qué referencias se están usando realmente.</p>
 
-    <div class="upload-grid">
+    <div class="radio-group" id="radioModo" style="margin-bottom:20px;">
+      <span class="radio-btn active" data-val="cruce" onclick="setModo('cruce', this)" style="padding:7px 16px;font-size:12.5px;">🔀 Cruce con Bibliografía</span>
+      <span class="radio-btn" data-val="demanda" onclick="setModo('demanda', this)" style="padding:7px 16px;font-size:12.5px;">📊 Demanda Real de un Programa</span>
+    </div>
+
+    <div class="upload-grid" id="uploadGrid">
       <!-- File 1: Extractor -->
       <div class="drop-zone" id="dzExt" onclick="document.getElementById('fileExt').click()">
         <input type="file" id="fileExt" accept=".xlsx,.xls">
@@ -753,6 +764,9 @@ body {
         <div class="dz-label">Excel de Bibliografías</div>
         <div class="dz-hint">Exportado desde la Suite Académica<br>(.xlsx con asignaturas y referencias)</div>
         <div class="dz-filename" id="fnExt"></div>
+      </div>
+      <div id="blockExtNota" style="display:none;background:var(--gray-light);border:1px dashed var(--border);border-radius:var(--radius);padding:24px 20px;text-align:center;color:var(--muted);font-size:12.5px;">
+        📊 No necesitas la bibliografía en este modo.<br>Solo cargá el Excel de Circulación y elegí el programa a la derecha.
       </div>
 
       <!-- File 2: Circulación -->
@@ -801,7 +815,7 @@ body {
         <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Carrera / Programa</label>
         <input type="text" id="inputCarrera" class="filter-search" style="width:100%" placeholder="Se detecta automáticamente">
       </div>
-      <div>
+      <div id="blockProgramaBib">
         <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Filtrar bibliografía por Programa <span style="color:var(--rojo);font-weight:900;">★</span></label>
         <select id="inputProgramaBib" class="filter-select" style="width:100%;border-color:var(--navy);padding:6px 10px;background:var(--surface);" disabled>
           <option value="">— Carga primero la bibliografía —</option>
@@ -809,12 +823,12 @@ body {
         <div style="font-size:10.5px;color:var(--muted);margin-top:3px;" id="programaBibHint">Solo aplica si el Excel del Extractor trae columna "Programa/Carrera" (ej. tabla maestra con varios programas)</div>
       </div>
       <div>
-        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;">Programa a comparar en circulación <span style="color:var(--rojo);font-weight:900;">★</span></label>
+        <label style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:5px;" id="labelPrograma">Programa a comparar en circulación <span style="color:var(--rojo);font-weight:900;">★</span></label>
         <select id="inputPrograma" class="filter-select" style="width:100%;border-color:var(--navy);padding:6px 10px;background:var(--surface);" disabled>
           <option value="">— Carga primero el Excel de circulación —</option>
         </select>
         <div style="font-size:10.5px;color:var(--muted);margin-top:3px;">Se llena automáticamente al cargar el Excel de circulación</div>
-        <div style="font-size:10.5px;color:var(--amber);margin-top:5px;line-height:1.5;background:var(--amber-light);padding:6px 8px;border-radius:6px;">
+        <div style="font-size:10.5px;color:var(--amber);margin-top:5px;line-height:1.5;background:var(--amber-light);padding:6px 8px;border-radius:6px;" id="hintPrograma">
           ⚠️ <strong>Sin elegir un programa</strong>, el % de circulación cuenta préstamos de <strong>toda la universidad</strong> — un libro compartido con pregrado puede mostrar alta circulación aunque nadie del programa evaluado lo use. Para medir si <em>este programa</em> usa su propia bibliografía (lo relevante para acreditación), elegí acá la carrera/programa correspondiente. Este campo es genérico: para evaluar otro programa, solo cargá su planilla de bibliografía y elegí su carrera aquí — no hay nada fijo en el código.
         </div>
       </div>
@@ -971,6 +985,102 @@ body {
     </div>
 
   </div>
+
+  <!-- DASHBOARD · DEMANDA REAL (sin bibliografía) -->
+  <div class="dashboard-demanda" id="dashboardDemanda">
+
+    <div class="print-header" id="printHeaderD">
+      <h1>Demanda Real de Circulación por Programa</h1>
+      <div class="print-sub">Biblioteca · Pontificia Universidad Católica de Valparaíso</div>
+      <div class="print-meta" id="printMetaD"></div>
+    </div>
+
+    <div class="cards-grid" style="grid-template-columns:repeat(4,1fr);">
+      <div style="grid-column: 1/-1; font-size: 11.5px; color: var(--muted); margin-bottom: -6px;">
+        📊 Esto muestra lo que los alumnos <strong>realmente piden</strong> en KOHA — sin filtrar contra ninguna bibliografía oficial. Complementa (no reemplaza) el cruce con bibliografía.
+      </div>
+      <div class="card c-rojo">
+        <div class="card-icon">📥</div>
+        <div class="card-value" id="dTotal">0</div>
+        <div class="card-label">Préstamos del programa</div>
+        <div class="card-sub" id="dTotalSub">en el período seleccionado</div>
+      </div>
+      <div class="card c-navy">
+        <div class="card-icon">📚</div>
+        <div class="card-value" id="dTitulos">0</div>
+        <div class="card-label">Títulos únicos pedidos</div>
+        <div class="card-sub" id="dTitulosSub">—</div>
+      </div>
+      <div class="card c-green">
+        <div class="card-icon">✍️</div>
+        <div class="card-value" id="dAutor">—</div>
+        <div class="card-label">Autor más recurrente</div>
+        <div class="card-sub" id="dAutorSub">—</div>
+      </div>
+      <div class="card c-gold">
+        <div class="card-icon">🗂️</div>
+        <div class="card-value" id="dArea">—</div>
+        <div class="card-label">Área temática dominante</div>
+        <div class="card-sub" id="dAreaSub">por prefijo de signatura</div>
+      </div>
+    </div>
+
+    <div class="section-title"><span>Visualización</span><span class="line"></span></div>
+    <div class="charts-grid" id="chartsGridD">
+      <div class="chart-panel">
+        <div class="chart-title">Distribución por área temática (signatura)</div>
+        <canvas id="chartAreasD" height="200"></canvas>
+      </div>
+      <div class="chart-panel chart-panel-wide" id="panelEvolD">
+        <div class="chart-title">Evolución de préstamos del programa por año</div>
+        <canvas id="chartEvolD" height="200"></canvas>
+      </div>
+    </div>
+
+    <div class="section-title"><span>Lo que más piden</span><span class="line"></span></div>
+    <div class="top-grid">
+      <div class="top-panel">
+        <div class="top-panel-header">📈 Títulos más pedidos</div>
+        <div id="topTitulosD"></div>
+      </div>
+      <div class="top-panel">
+        <div class="top-panel-header">✍️ Autores más pedidos</div>
+        <div id="topAutoresD"></div>
+      </div>
+    </div>
+
+    <div class="section-title"><span>Detalle de títulos pedidos</span><span class="line"></span></div>
+    <div class="filters-bar">
+      <div class="filter-group">
+        <input type="text" class="filter-search" id="filterSearchD" placeholder="🔍 Buscar título o autor..." oninput="aplicarFiltrosD()">
+      </div>
+      <div class="filters-right">
+        <span class="results-count" id="resultsCountD"></span>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th onclick="sortTableD('titulo')">Título</th>
+            <th onclick="sortTableD('autor')">Autor</th>
+            <th>Signatura</th>
+            <th onclick="sortTableD('prestamosPrograma')" style="text-align:center;">Préstamos del Programa</th>
+            <th onclick="sortTableD('prestamosTotal')" style="text-align:center;">Préstamos Totales Colección</th>
+          </tr>
+        </thead>
+        <tbody id="tableBodyD"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="paginacionD"></div>
+
+    <div class="export-bar">
+      <button class="btn-export primary" onclick="exportarExcelDemanda()">📥 Descargar Excel de demanda</button>
+      <button class="btn-export secondary" onclick="exportarPDFDemanda()">🖨️ Exportar Dashboard a PDF</button>
+      <span class="export-note">Este archivo NO cruza contra bibliografía — es demanda real de circulación.</span>
+    </div>
+
+  </div>
 </div>
 
 <script>
@@ -997,6 +1107,42 @@ let sortKey = 'prestamos', sortDir = -1;
 let filterTipo = '', filterEstado = '', currentPage = 0, programaActivo = '';
 let modoImpresion = false;
 const PAGE_SIZE = 50;
+
+// ── Modo "Demanda Real de un Programa" (sin bibliografía) ──
+let modoActual = 'cruce'; // 'cruce' | 'demanda'
+let allResultsD = [], filteredD = [], currentPageD = 0, sortKeyD = 'prestamosPrograma', sortDirD = -1;
+let demandaData = null; // guarda { programaSel, periodo, items, autores, areas, anios } para exportar
+
+function setModo(m, el) {
+  modoActual = m;
+  document.querySelectorAll('#radioModo .radio-btn').forEach(b => b.classList.toggle('active', b === el));
+
+  const esDemanda = m === 'demanda';
+  document.getElementById('dzExt').style.display = esDemanda ? 'none' : '';
+  document.getElementById('blockExtNota').style.display = esDemanda ? 'block' : 'none';
+  document.getElementById('uploadGrid').style.gridTemplateColumns = esDemanda ? '1fr' : '';
+  document.getElementById('blockProgramaBib').style.display = esDemanda ? 'none' : '';
+
+  document.getElementById('uploadTitle').textContent = esDemanda
+    ? 'Demanda Real de Circulación por Programa'
+    : 'Cruce Bibliografía × Circulación KOHA';
+  document.getElementById('uploadSubtitle').textContent = esDemanda
+    ? 'Carga solo el reporte de circulación de KOHA y elegí un programa para ver qué piden realmente sus alumnos, sin necesidad de subir ninguna bibliografía.'
+    : 'Carga el Excel del Extractor Masivo y el reporte de circulación de KOHA para analizar qué referencias se están usando realmente.';
+  document.getElementById('labelPrograma').innerHTML = esDemanda
+    ? 'Programa a analizar <span style="color:var(--rojo);font-weight:900;">★ obligatorio</span>'
+    : 'Programa a comparar en circulación <span style="color:var(--rojo);font-weight:900;">★</span>';
+  document.getElementById('hintPrograma').innerHTML = esDemanda
+    ? '⚠️ En este modo el programa es <strong>obligatorio</strong>: sin elegir uno, la demanda mezclaría préstamos de toda la universidad y no respondería la pregunta de qué pide <em>este</em> programa.'
+    : '⚠️ <strong>Sin elegir un programa</strong>, el % de circulación cuenta préstamos de <strong>toda la universidad</strong> — un libro compartido con pregrado puede mostrar alta circulación aunque nadie del programa evaluado lo use. Para medir si <em>este programa</em> usa su propia bibliografía (lo relevante para acreditación), elegí acá la carrera/programa correspondiente. Este campo es genérico: para evaluar otro programa, solo cargá su planilla de bibliografía y elegí su carrera aquí — no hay nada fijo en el código.';
+  document.getElementById('btnLabel').textContent = esDemanda ? '📊 Ver Demanda Real' : '⚡ Procesar y Analizar';
+
+  // El dashboard del modo inactivo se oculta incluso al imprimir
+  document.getElementById('dashboard').classList.toggle('dashboard-inactivo', esDemanda);
+  document.getElementById('dashboardDemanda').classList.toggle('dashboard-inactivo', !esDemanda);
+
+  checkReady();
+}
 
 // ══════════════════════════════════════════════════════════
 // DRAG & DROP y FILE LOADING
@@ -1079,7 +1225,9 @@ function clearFile(tipo) {
 }
 
 function checkReady() {
-  document.getElementById('btnProcesar').disabled = !(rawExt && rawCirc);
+  document.getElementById('btnProcesar').disabled = modoActual === 'demanda'
+    ? !rawCirc
+    : !(rawExt && rawCirc);
 }
 
 function detectarRangoAnios(wb) {
@@ -1537,7 +1685,7 @@ function parsearCirculacion(wb, anioDesde, anioHasta) {
     const key = (usaInventario && inventario) ? inventario : (norm(titulo) + '||' + norm(autor));
 
     if (!map.has(key)) {
-      map.set(key, { titulo, autor, signatura, numero_inventario: inventario, prestamos: 0, porCarrera: {}, _usaInventario: usaInventario });
+      map.set(key, { titulo, autor, signatura, numero_inventario: inventario, prestamos: 0, porCarrera: {}, det: [], _usaInventario: usaInventario });
     } else if (titulo && !map.get(key).titulo) {
       map.get(key).titulo = titulo;
     }
@@ -1545,6 +1693,9 @@ function parsearCirculacion(wb, anioDesde, anioHasta) {
     item.prestamos++;
     const cn = norm(carrera);
     if (cn) item.porCarrera[cn] = (item.porCarrera[cn] || 0) + 1;
+    // Detalle por préstamo individual (carrera + año), usado por el modo
+    // "Demanda Real de un Programa" para filtrar sin depender de bibliografía.
+    item.det.push({ carrera: cn, anio: iFecha !== -1 ? extraerAnio(r[iFecha]) : null });
   }
   const result = [...map.values()];
   result._sinFecha = iFecha === -1;
@@ -1637,6 +1788,8 @@ function vincularPorInventario(cat, circ) {
 // PROCESAMIENTO PRINCIPAL
 // ══════════════════════════════════════════════════════════
 async function procesarDatos() {
+  if (modoActual === 'demanda') { return procesarDemanda(); }
+
   const btn = document.getElementById('btnProcesar');
   btn.disabled = true;
   btn.classList.add('loading');
@@ -1894,6 +2047,328 @@ async function procesarDatos() {
   btn.classList.remove('loading');
   document.getElementById('btnLabel').textContent = '⚡ Procesar y Analizar';
   btn.disabled = false;
+}
+
+// ══════════════════════════════════════════════════════════
+// MODO "DEMANDA REAL DE UN PROGRAMA" (sin bibliografía)
+// Parte solo del Excel de Circulación KOHA: filtra por programa/carrera y
+// muestra qué piden realmente sus alumnos (títulos, autores, áreas temáticas
+// por prefijo de signatura, evolución por año), sin cruzar contra ninguna
+// bibliografía oficial.
+// ══════════════════════════════════════════════════════════
+async function procesarDemanda() {
+  const btn = document.getElementById('btnProcesar');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  document.getElementById('btnLabel').textContent = 'Procesando...';
+
+  const log = document.getElementById('statusLog');
+  log.className = 'status-log visible';
+  log.innerHTML = '';
+  function addLog(msg, type = 'active') {
+    log.innerHTML += `<div class="log-line ${type}">${msg}</div>`;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  await new Promise(r => setTimeout(r, 50));
+
+  function salirConError(msg) {
+    addLog(msg, 'error');
+    btn.classList.remove('loading');
+    document.getElementById('btnLabel').textContent = '📊 Ver Demanda Real';
+    btn.disabled = false;
+  }
+
+  try {
+    const programaSel = document.getElementById('inputPrograma').value.trim();
+    if (!programaSel) {
+      salirConError('⚠️ Elegí un programa/carrera en "Programa a analizar" — es obligatorio en este modo, ya que sin él la demanda mezclaría a toda la universidad.');
+      return;
+    }
+    const programaNorm = norm(programaSel);
+    const anioDesde = parseInt(document.getElementById('inputAnioDesde').value, 10) || null;
+    const anioHasta = parseInt(document.getElementById('inputAnioHasta').value, 10) || null;
+    const periodo = document.getElementById('inputPeriodo').value;
+
+    addLog('▸ Leyendo Excel de Circulación KOHA...');
+    await new Promise(r => setTimeout(r, 30));
+    const circAll = parsearCirculacion(rawCirc, null, null);
+    addLog(`  ✓ ${circAll.length} títulos únicos con préstamos registrados en la colección`);
+
+    // Filtrar por programa (y opcionalmente por rango de años) a nivel de cada
+    // préstamo individual, usando el detalle registrado en parsearCirculacion.
+    const items = [];
+    let excluidosPorAnio = 0;
+    circAll.forEach(it => {
+      const dets = it.det.filter(d => {
+        if (d.carrera !== programaNorm) return false;
+        if (anioDesde && d.anio && d.anio < anioDesde) { excluidosPorAnio++; return false; }
+        if (anioHasta && d.anio && d.anio > anioHasta) { excluidosPorAnio++; return false; }
+        return true;
+      });
+      if (dets.length === 0) return;
+      items.push({ titulo: it.titulo, autor: it.autor, signatura: it.signatura, prestamosPrograma: dets.length, prestamosTotal: it.prestamos, dets });
+    });
+
+    if (!items.length) {
+      salirConError(`⚠️ No se encontraron préstamos de "${programaSel}" en el rango seleccionado. Revisá que el nombre coincida con la columna Carrera/Programa del Excel de Circulación.`);
+      return;
+    }
+    items.sort((a, b) => b.prestamosPrograma - a.prestamosPrograma);
+    items.forEach((it, i) => { it._id = i; });
+    const totalPrestamos = items.reduce((a, it) => a + it.prestamosPrograma, 0);
+    addLog(`  ✓ "${programaSel}": ${totalPrestamos.toLocaleString()} préstamos en ${items.length} títulos distintos`);
+    if (anioDesde || anioHasta) {
+      addLog(`  🗓 Filtro de año aplicado (${anioDesde || '…'}–${anioHasta || '…'}): ${excluidosPorAnio.toLocaleString()} préstamos del programa excluidos`);
+    }
+
+    // Autores más recurrentes (suma de préstamos del programa por autor)
+    const autoresMap = new Map();
+    items.forEach(it => {
+      const a = it.autor || '(sin autor registrado)';
+      autoresMap.set(a, (autoresMap.get(a) || 0) + it.prestamosPrograma);
+    });
+    const autores = [...autoresMap.entries()].sort((a, b) => b[1] - a[1]);
+
+    // Áreas temáticas aproximadas por prefijo alfabético de la signatura
+    // (ej. "QA", "HD" — estilo LC; o el primer bloque para CDU/Cutter locales).
+    const areasMap = new Map();
+    items.forEach(it => {
+      const m = String(it.signatura || '').trim().match(/^([A-Za-zÁÉÍÓÚÑ]{1,3})/);
+      const prefijo = m ? m[1].toUpperCase() : '(sin signatura)';
+      areasMap.set(prefijo, (areasMap.get(prefijo) || 0) + it.prestamosPrograma);
+    });
+    const areas = [...areasMap.entries()].sort((a, b) => b[1] - a[1]);
+
+    // Evolución temporal (solo si el archivo trae columna de fecha)
+    const aniosMap = new Map();
+    items.forEach(it => it.dets.forEach(d => { if (d.anio) aniosMap.set(d.anio, (aniosMap.get(d.anio) || 0) + 1); }));
+    const anios = [...aniosMap.entries()].sort((a, b) => a[0] - b[0]);
+    if (anios.length === 0) addLog('  ⚠️ Sin columna de fecha detectada — no se puede mostrar evolución por año', 'warn');
+
+    addLog('▸ Construyendo dashboard de demanda real...');
+    await new Promise(r => setTimeout(r, 30));
+
+    demandaData = { programaSel, periodo, items, autores, areas, anios };
+    renderDashboardDemanda(demandaData);
+    addLog('✅ Análisis completo.', 'active');
+
+    document.getElementById('dashboardDemanda').classList.add('visible');
+    document.getElementById('dashboardDemanda').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    btn.classList.remove('loading');
+    document.getElementById('btnLabel').textContent = '📊 Ver Demanda Real';
+    btn.disabled = false;
+
+  } catch (err) {
+    console.error(err);
+    salirConError('❌ Error: ' + err.message);
+  }
+}
+
+let chartAreasDInst = null, chartEvolDInst = null;
+
+function renderDashboardDemanda(data) {
+  const { programaSel, periodo, items, autores, areas, anios } = data;
+  const totalPrestamos = items.reduce((a, it) => a + it.prestamosPrograma, 0);
+
+  animateCard('dTotal', totalPrestamos);
+  document.getElementById('dTotalSub').textContent = `de "${programaSel}"${periodo ? ' · ' + periodo : ''}`;
+  animateCard('dTitulos', items.length);
+  document.getElementById('dTitulosSub').textContent = `${(totalPrestamos / items.length).toFixed(1)} préstamos por título en promedio`;
+  document.getElementById('dAutor').textContent = autores[0] ? autores[0][0].split(',')[0].slice(0, 22) : '—';
+  document.getElementById('dAutorSub').textContent = autores[0] ? `${autores[0][1]} préstamos` : '—';
+  document.getElementById('dArea').textContent = areas[0] ? areas[0][0] : '—';
+  document.getElementById('dAreaSub').textContent = areas[0] ? `${areas[0][1]} préstamos · ${Math.round(areas[0][1] / totalPrestamos * 100)}% del total` : 'por prefijo de signatura';
+
+  // Badge de período/programa en el header
+  const badge = document.getElementById('headerPeriodo');
+  badge.style.display = 'inline-block';
+  badge.textContent = [periodo, '· ' + programaSel].filter(Boolean).join(' ');
+
+  // ── Chart: áreas temáticas (donut) ──
+  const ctxA = document.getElementById('chartAreasD').getContext('2d');
+  if (chartAreasDInst) chartAreasDInst.destroy();
+  const topAreas = areas.slice(0, 8);
+  const otrasAreas = areas.slice(8).reduce((a, [, n]) => a + n, 0);
+  const labelsA = topAreas.map(a => a[0]).concat(otrasAreas > 0 ? ['Otras'] : []);
+  const dataA = topAreas.map(a => a[1]).concat(otrasAreas > 0 ? [otrasAreas] : []);
+  const paleta = ['#005793', '#9d2c28', '#1a7a4a', '#b8860b', '#7c3aed', '#00426f', '#6c757d', '#c8102e', '#9ca3af'];
+  chartAreasDInst = new Chart(ctxA, {
+    type: 'doughnut',
+    data: { labels: labelsA, datasets: [{ data: dataA, backgroundColor: paleta, borderWidth: 2, borderColor: '#f8f8f7' }] },
+    options: { responsive: true, plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } } }
+  });
+
+  // ── Chart: evolución por año ──
+  const panelEvol = document.getElementById('panelEvolD');
+  if (anios.length === 0) {
+    panelEvol.innerHTML = `<div class="chart-title">Evolución de préstamos del programa por año</div>
+      <div style="text-align:center;color:var(--muted);font-size:12.5px;padding:40px 10px;">
+        El Excel de Circulación no trae columna de fecha reconocible — no se puede calcular la evolución por año.
+      </div>`;
+  } else {
+    const ctxE = document.getElementById('chartEvolD').getContext('2d');
+    if (chartEvolDInst) chartEvolDInst.destroy();
+    chartEvolDInst = new Chart(ctxE, {
+      type: 'bar',
+      data: { labels: anios.map(a => String(a[0])), datasets: [{ label: 'Préstamos', data: anios.map(a => a[1]), backgroundColor: '#005793', borderRadius: 4 }] },
+      options: { responsive: true, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }, plugins: { legend: { display: false } } }
+    });
+  }
+
+  // ── Top títulos ──
+  const maxT = items[0] ? items[0].prestamosPrograma : 1;
+  document.getElementById('topTitulosD').innerHTML = items.slice(0, 10).map((it, i) => `
+    <div class="top-item">
+      <span class="top-rank">${i + 1}</span>
+      <div class="top-item-text">
+        <div class="top-item-title" title="${escHtml(it.titulo)}">${escHtml(it.titulo)}</div>
+        <div class="top-item-author">${escHtml(it.autor || '')}</div>
+      </div>
+      <div class="top-bar-wrap">
+        <div class="top-bar highlight" style="width:${Math.max(4, Math.round(it.prestamosPrograma / maxT * 60))}px;"></div>
+        <span class="top-count">${it.prestamosPrograma}</span>
+      </div>
+    </div>`).join('') || '<div class="empty-row" style="padding:24px;text-align:center;color:var(--muted);">Sin datos</div>';
+
+  // ── Top autores ──
+  const maxA = autores[0] ? autores[0][1] : 1;
+  document.getElementById('topAutoresD').innerHTML = autores.slice(0, 10).map(([autor, n], i) => `
+    <div class="top-item">
+      <span class="top-rank">${i + 1}</span>
+      <div class="top-item-text">
+        <div class="top-item-title" title="${escHtml(autor)}">${escHtml(autor)}</div>
+      </div>
+      <div class="top-bar-wrap">
+        <div class="top-bar highlight" style="width:${Math.max(4, Math.round(n / maxA * 60))}px;"></div>
+        <span class="top-count">${n}</span>
+      </div>
+    </div>`).join('') || '<div class="empty-row" style="padding:24px;text-align:center;color:var(--muted);">Sin datos</div>';
+
+  // ── Tabla de detalle ──
+  allResultsD = items;
+  currentPageD = 0;
+  aplicarFiltrosD();
+}
+
+function aplicarFiltrosD() {
+  const search = norm(document.getElementById('filterSearchD').value);
+  filteredD = allResultsD.filter(it => {
+    if (search && !norm(it.titulo + ' ' + (it.autor || '')).includes(search)) return false;
+    return true;
+  });
+  sortTableD(sortKeyD, true);
+  currentPageD = 0;
+  renderTablaD();
+}
+
+function sortTableD(key, silent = false) {
+  if (!silent) {
+    sortDirD = (sortKeyD === key) ? -sortDirD : -1;
+    sortKeyD = key;
+  }
+  filteredD.sort((a, b) => {
+    let av = a[key], bv = b[key];
+    if (typeof av === 'string') { av = norm(av); bv = norm(bv); }
+    if (av < bv) return -1 * sortDirD;
+    if (av > bv) return 1 * sortDirD;
+    return 0;
+  });
+  if (!silent) { currentPageD = 0; renderTablaD(); }
+}
+
+function renderTablaD() {
+  document.getElementById('resultsCountD').textContent = `${filteredD.length} título${filteredD.length !== 1 ? 's' : ''}`;
+  const start = currentPageD * PAGE_SIZE;
+  const pageItems = filteredD.slice(start, start + PAGE_SIZE);
+  document.getElementById('tableBodyD').innerHTML = pageItems.length ? pageItems.map(it => `
+    <tr>
+      <td class="ref-text">${escHtml(it.titulo)}</td>
+      <td>${escHtml(it.autor || '—')}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);">${escHtml(it.signatura || '—')}</td>
+      <td class="prestamos-cell ${it.prestamosPrograma >= 20 ? 'high' : it.prestamosPrograma >= 5 ? 'mid' : 'low'}">${it.prestamosPrograma}</td>
+      <td class="prestamos-cell low">${it.prestamosTotal}</td>
+    </tr>`).join('') : '<tr class="empty-row"><td colspan="5">Sin resultados con este filtro</td></tr>';
+  renderPaginacionD();
+}
+
+function renderPaginacionD() {
+  const totalPages = Math.ceil(filteredD.length / PAGE_SIZE);
+  const pag = document.getElementById('paginacionD');
+  if (totalPages <= 1) { pag.innerHTML = ''; return; }
+  let html = `<button class="pg-btn" onclick="changePageD(${currentPageD - 1})" ${currentPageD === 0 ? 'disabled' : ''}>‹</button>`;
+  for (let i = 0; i < totalPages; i++) {
+    if (totalPages > 9 && Math.abs(i - currentPageD) > 2 && i !== 0 && i !== totalPages - 1) {
+      if (i === 1 || i === totalPages - 2) html += '<span class="pg-info">…</span>';
+      continue;
+    }
+    html += `<button class="pg-btn ${i === currentPageD ? 'active' : ''}" onclick="changePageD(${i})">${i + 1}</button>`;
+  }
+  html += `<button class="pg-btn" onclick="changePageD(${currentPageD + 1})" ${currentPageD === totalPages - 1 ? 'disabled' : ''}>›</button>`;
+  html += `<span class="pg-info">Página ${currentPageD + 1} de ${totalPages}</span>`;
+  pag.innerHTML = html;
+}
+
+function changePageD(p) {
+  const total = Math.ceil(filteredD.length / PAGE_SIZE);
+  if (p < 0 || p >= total) return;
+  currentPageD = p;
+  renderTablaD();
+  document.querySelectorAll('.table-wrap')[document.querySelectorAll('.table-wrap').length - 1].scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function exportarExcelDemanda() {
+  if (!demandaData) return;
+  const { programaSel, periodo, items, autores, areas, anios } = demandaData;
+  const wb = XLSX.utils.book_new();
+
+  const data1 = [
+    ['Demanda Real de Circulación · Biblioteca PUCV'],
+    ['Programa/Carrera:', programaSel, '', 'Período:', periodo],
+    [],
+    ['Título', 'Autor', 'Signatura', 'Préstamos del Programa', 'Préstamos Totales Colección']
+  ];
+  items.forEach(it => data1.push([it.titulo, it.autor || '', it.signatura || '', it.prestamosPrograma, it.prestamosTotal]));
+  const ws1 = XLSX.utils.aoa_to_sheet(data1);
+  ws1['!cols'] = [{ wch: 55 }, { wch: 30 }, { wch: 18 }, { wch: 22 }, { wch: 24 }];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Títulos más pedidos');
+
+  const data2 = [['Autor', 'Préstamos del Programa']];
+  autores.forEach(([a, n]) => data2.push([a, n]));
+  const ws2 = XLSX.utils.aoa_to_sheet(data2);
+  ws2['!cols'] = [{ wch: 40 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Autores más pedidos');
+
+  const data3 = [['Prefijo de Signatura (área temática aprox.)', 'Préstamos del Programa']];
+  areas.forEach(([a, n]) => data3.push([a, n]));
+  const ws3 = XLSX.utils.aoa_to_sheet(data3);
+  ws3['!cols'] = [{ wch: 40 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Áreas temáticas');
+
+  if (anios.length) {
+    const data4 = [['Año', 'Préstamos del Programa']];
+    anios.forEach(([a, n]) => data4.push([a, n]));
+    const ws4 = XLSX.utils.aoa_to_sheet(data4);
+    ws4['!cols'] = [{ wch: 12 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, ws4, 'Evolución por año');
+  }
+
+  XLSX.writeFile(wb, `Demanda_Real_${programaSel.replace(/\s+/g, '_')}_${(periodo || '').replace(/[^0-9\-]/g, '')}.xlsx`);
+}
+
+function prepararParaImprimirD() {
+  if (!demandaData) return;
+  const { programaSel, periodo } = demandaData;
+  const fecha = new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'long', year: 'numeric' });
+  document.getElementById('printMetaD').innerHTML =
+    `<strong>Programa/Carrera:</strong> ${escHtml(programaSel)} &nbsp;·&nbsp; <strong>Período:</strong> ${escHtml(periodo)} &nbsp;·&nbsp; Generado el ${fecha}`;
+}
+window.addEventListener('beforeprint', prepararParaImprimirD);
+
+function exportarPDFDemanda() {
+  if (!demandaData) return;
+  window.print();
 }
 
 // ══════════════════════════════════════════════════════════
